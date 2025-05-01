@@ -87,33 +87,31 @@ export default function DashboardLayout({
             <SidebarMenu>
               {sidebarNavItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
-                  <Link href={item.href} legacyBehavior passHref>
-                    <SidebarMenuButton
-                      asChild // Use asChild to pass props to the underlying Link -> a
-                      isActive={
-                        pathname === item.href ||
-                        (item.href !== '/' && pathname.startsWith(item.href))
-                      }
-                      className="justify-end" // Align content to the right
-                      tooltip={item.label}
-                      variant="default" // Ensure variant is passed if needed
-                      size="default" // Ensure size is passed if needed
-                    >
-                      <a> {/* The actual element receiving the button styles */}
-                        <item.icon />
-                        <span>{item.label}</span>
-                        {item.badge && isClient && cartItemCount > 0 && (
-                           <Badge
-                            variant="destructive"
-                            className="absolute top-1 left-1 h-5 w-5 p-0 flex items-center justify-center rounded-full text-xs group-data-[state=collapsed]:group-data-[collapsible=icon]:hidden" // Use state for hiding
-                             style={{ lineHeight: '1' }}
-                          >
-                            {cartItemCount}
-                          </Badge>
-                        )}
-                      </a>
-                    </SidebarMenuButton>
-                  </Link>
+                  <SidebarMenuButton
+                    asChild // Use asChild to pass props to the underlying Link -> a
+                    isActive={
+                      pathname === item.href ||
+                      (item.href !== '/' && pathname.startsWith(item.href))
+                    }
+                    className="justify-end" // Align content to the right
+                    tooltip={item.label}
+                    variant="default" // Ensure variant is passed if needed
+                    size="default" // Ensure size is passed if needed
+                  >
+                    <Link href={item.href} > {/* Removed legacyBehavior */}
+                      <item.icon />
+                      <span>{item.label}</span>
+                      {item.badge && isClient && cartItemCount > 0 && (
+                         <Badge
+                          variant="destructive"
+                          className="absolute top-1 left-1 h-5 w-5 p-0 flex items-center justify-center rounded-full text-xs group-data-[state=collapsed]:group-data-[collapsible=icon]:hidden" // Use state for hiding
+                           style={{ lineHeight: '1' }}
+                        >
+                          {cartItemCount}
+                        </Badge>
+                      )}
+                    </Link>
+                  </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
@@ -122,21 +120,19 @@ export default function DashboardLayout({
             <SidebarMenu>
               {settingsNavItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
-                  <Link href={item.href} legacyBehavior passHref>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={pathname.startsWith(item.href)}
-                      className="justify-end" // Align content to the right
-                      tooltip={item.label}
-                      variant="default"
-                      size="default"
-                    >
-                      <a>
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </Link>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname.startsWith(item.href)}
+                    className="justify-end" // Align content to the right
+                    tooltip={item.label}
+                    variant="default"
+                    size="default"
+                  >
+                    <Link href={item.href} > {/* Removed legacyBehavior */}
+                      <item.icon />
+                      <span>{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
               {/* Basic Logout Button Example */}

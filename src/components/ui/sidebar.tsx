@@ -521,79 +521,84 @@ const sidebarMenuButtonVariants = cva(
 
 
 const SidebarMenuButton = React.forwardRef<
-  HTMLButtonElement | HTMLAnchorElement, // Allow button or anchor
-  (React.ComponentProps<'button'> | React.ComponentProps<'a'>) & { // Union of props
+  HTMLButtonElement | HTMLAnchorElement,
+  (React.ButtonHTMLAttributes<HTMLButtonElement> | React.AnchorHTMLAttributes<HTMLAnchorElement>) & {
     asChild?: boolean;
     isActive?: boolean;
-    tooltip?: string | Omit<React.ComponentProps<typeof TooltipContent>, 'children'>; // Allow tooltip object props
+    tooltip?: string | React.ComponentProps<typeof TooltipContent>;
   } & VariantProps<typeof sidebarMenuButtonVariants>
->(
-  (
-    {
+>(({
       asChild = false,
       isActive = false,
       variant = 'default',
       size = 'default',
       tooltip,
       className,
-      children, // Ensure children are passed down
+      children,
       ...props
-    },
-    ref
-  ) => {
-    const { isMobile, state, side, toggleSidebar } = useSidebar(); // Get sidebar state
-    const Comp = asChild ? Slot : (props as any).href ? 'a' : 'button'; // Detect if it's a link
+   }, ref) => {
+  const { isMobile, state, side, toggleSidebar } = useSidebar();
+  const Comp = asChild ? Slot : (props as any).href ? 'a' : 'button';
+  const showTooltip = tooltip && state === 'collapsed' && !isMobile;
 
-    const showTooltip = tooltip && state === 'collapsed' && !isMobile;
+  // Original onClick handler from props
+  const originalOnClick = (props as React.ButtonHTMLAttributes<HTMLButtonElement>).onClick;
 
-    const ButtonElement = (
-      <Comp
-        ref={ref as any} // Apply the ref here
-        data-sidebar="menu-button"
-        data-size={size}
-        data-active={isActive}
-        className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
-        // Close mobile sidebar on click/link navigation
-        onClick={(e) => {
-          if (isMobile) {
-            toggleSidebar(); // Close mobile sidebar
-          }
-          (props as any).onClick?.(e); // Call original onClick if exists
-        }}
-        {...props} // Spread original props (including href etc.)
-      >
-        {children} {/* Render children (icon, span) */}
-      </Comp>
-    );
-
-    if (!showTooltip) {
-      // Render directly if no tooltip needed
-      return ButtonElement;
+  // Combine original onClick with mobile sidebar toggle
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement | HTMLAnchorElement>) => {
+    if (isMobile) {
+      toggleSidebar();
     }
+    if (originalOnClick && typeof originalOnClick === 'function') {
+      originalOnClick(event as React.MouseEvent<HTMLButtonElement>); // Cast might be needed if type mismatch
+    }
+  };
 
-    // Tooltip specific props
-    const tooltipContentProps: Omit<React.ComponentProps<typeof TooltipContent>, 'children'> =
-        typeof tooltip === 'string' ? {} : tooltip; // If tooltip is string, use default props
+  const buttonContent = (
+    <Comp
+      ref={ref as any}
+      data-sidebar="menu-button"
+      data-size={size}
+      data-active={isActive}
+      className={cn(sidebarMenuButtonVariants({ variant, size, className }))}
+      onClick={handleClick}
+      {...props} // Spread original props (including href etc.)
+    >
+      {children}
+    </Comp>
+  );
 
-    // Wrap the ButtonElement with TooltipTrigger when tooltip is active
-    return (
-        <Tooltip>
-            <TooltipTrigger asChild>
-                {ButtonElement}
-            </TooltipTrigger>
-            <TooltipContent
-                side={side === 'right' ? 'left' : 'right'} // Adjust tooltip side based on sidebar side
-                align="center"
-                sideOffset={6} // Adjust offset
-                {...tooltipContentProps} // Spread additional TooltipContent props
-            >
-                {typeof tooltip === 'string' ? tooltip : tooltip.children} {/* Handle string or object children */}
-            </TooltipContent>
-        </Tooltip>
-    );
+  if (!showTooltip) {
+    return buttonContent;
   }
-);
+
+  const tooltipContentProps: Omit<React.ComponentProps<typeof TooltipContent>, 'children'> =
+    typeof tooltip === 'string' ? {} : tooltip;
+
+  return (
+    <Tooltip>
+      {/* When using asChild with TooltipTrigger, it expects a single direct child that can accept a ref.
+          Our 'buttonContent' already contains the Comp which should receive the ref.
+          If Comp itself is a Slot, it will pass the ref down.
+          If Comp is 'a' or 'button', it directly accepts the ref.
+          The error occurs if TooltipTrigger tries to add another layer or clone improperly.
+          Let's ensure the structure is clean. */}
+      <TooltipTrigger asChild>
+        {buttonContent}
+      </TooltipTrigger>
+      <TooltipContent
+        side={side === 'right' ? 'left' : 'right'}
+        align="center"
+        sideOffset={6}
+        {...tooltipContentProps}
+      >
+        {typeof tooltip === 'string' ? tooltip : tooltip.children}
+      </TooltipContent>
+    </Tooltip>
+  );
+});
 SidebarMenuButton.displayName = 'SidebarMenuButton';
+
 
 
 const SidebarMenuAction = React.forwardRef<
