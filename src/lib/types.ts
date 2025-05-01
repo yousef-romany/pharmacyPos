@@ -52,12 +52,14 @@ export interface SaleTransaction {
   date: Date;
 }
 
+// Type for items within a purchase transaction
 export interface PurchaseTransactionItem {
     productId: string;
     quantity: number; // Quantity of the main unit purchased
     cost: number; // Cost per main unit
 }
 
+// Type for a purchase transaction (invoice)
 export interface PurchaseTransaction {
   id: string;
   supplierId: string; // Link to supplier
@@ -65,4 +67,3 @@ export interface PurchaseTransaction {
   totalAmount: number;
   date: Date;
 }
-

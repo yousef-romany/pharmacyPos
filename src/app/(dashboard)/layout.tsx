@@ -23,7 +23,7 @@ import {
   Users,
   Building,
   Receipt,
-  Truck,
+  Truck, // Added Truck icon for Purchases
   Settings,
   LogOut,
   Pill, // Added for Products
@@ -34,13 +34,13 @@ import { useCart } from '@/hooks/use-cart'; // Import useCart
 
 // Sidebar Navigation Items
 const sidebarNavItems = [
-  { href: '/dashboard', icon: Home, label: 'لوحة التحكم' }, // Changed href to /dashboard
-  { href: '/pos', icon: ShoppingCart, label: 'نقطة البيع', badge: true }, // Added badge marker
-  { href: '/products', icon: Pill, label: 'الأصناف' }, // Changed icon
+  { href: '/dashboard', icon: Home, label: 'لوحة التحكم' },
+  { href: '/pos', icon: ShoppingCart, label: 'نقطة البيع', badge: true },
+  { href: '/products', icon: Pill, label: 'الأصناف' },
   { href: '/suppliers', icon: Building, label: 'الموردين' },
   { href: '/customers', icon: Users, label: 'العملاء' },
   { href: '/sales', icon: Receipt, label: 'فواتير البيع' },
-  { href: '/purchases', icon: Truck, label: 'فواتير الشراء' },
+  { href: '/purchases', icon: Truck, label: 'فواتير الشراء' }, // Added Purchases link
 ];
 
 const settingsNavItems = [
@@ -72,7 +72,7 @@ export default function DashboardLayout({
 
   return (
     <SidebarProvider defaultOpen side="right"> {/* Set side to right here */}
-      <div className="flex min-h-screen bg-background">
+      <div className="flex min-h-screen w-full bg-background">
         <Sidebar /* Removed side prop here, comes from provider */ collapsible="icon">
           <SidebarHeader className="p-4 items-center">
             <div className="flex items-center gap-2 flex-grow">
@@ -128,10 +128,13 @@ export default function DashboardLayout({
                     variant="default"
                     size="default"
                   >
-                    <Link href={item.href} > {/* Removed legacyBehavior */}
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </Link>
+                     {/* Updated Button Element structure */}
+                     <Link href={item.href}>
+                      <>
+                        <item.icon />
+                        <span>{item.label}</span>
+                      </>
+                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -144,16 +147,18 @@ export default function DashboardLayout({
                      variant="destructive" // Use destructive variant
                      size="default"
                   >
-                     <LogOut />
-                    <span>تسجيل الخروج</span>
+                     {/* Ensure content is wrapped */}
+                     <>
+                       <LogOut />
+                       <span>تسجيل الخروج</span>
+                     </>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
             </SidebarMenu>
           </SidebarFooter>
         </Sidebar>
-        <SidebarInset className="flex-1 overflow-auto">{children}</SidebarInset>
+        <SidebarInset className="flex-1 overflow-auto w-full">{children}</SidebarInset>
       </div>
     </SidebarProvider>
   );
 }
-

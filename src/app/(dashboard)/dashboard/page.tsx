@@ -83,11 +83,11 @@ export default function DashboardOverviewPage() {
 
         // --- Calculate Stats ---
         const totalSalesValue = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
-        const totalPurchaseValue = purchases.reduce((sum, purchase) => sum + purchase.totalAmount, 0);
+        const totalPurchaseValue = purchases.reduce((sum, purchase) => sum + purchase.totalAmount, 0); // Calculate actual purchase value
 
         const loadedStats: DashboardStat[] = [
           { title: 'إجمالي المبيعات', value: `${totalSalesValue.toFixed(2)} ر.س`, icon: DollarSign, description: `من ${sales.length} فاتورة` },
-          { title: 'إجمالي المشتريات', value: `${totalPurchaseValue.toFixed(2)} ر.س`, icon: Truck, description: `من ${purchases.length} فاتورة` },
+          { title: 'إجمالي المشتريات', value: `${totalPurchaseValue.toFixed(2)} ر.س`, icon: Truck, description: `من ${purchases.length} فاتورة` }, // Updated purchase description
           { title: 'عدد المنتجات', value: products.length, icon: Package, description: 'الأصناف المتوفرة' },
           { title: 'عدد العملاء', value: customers.length, icon: Users, description: 'العملاء المسجلون' },
           { title: 'عدد الموردين', value: suppliers.length, icon: ShoppingCart, description: 'الموردون المسجلون' },
@@ -166,7 +166,7 @@ export default function DashboardOverviewPage() {
       return config;
    }, [categorySalesData]); // End of useMemo
 
-   // Removed comment before return statement to fix parsing error
+   // Ensure syntax is correct before the return statement
    return (
      <div className="p-4 md:p-6 space-y-6">
        <h2 className="text-2xl font-semibold">لوحة التحكم الرئيسية</h2>
@@ -217,6 +217,40 @@ export default function DashboardOverviewPage() {
             <CardTitle>المبيعات حسب الفئة (أعلى 5)</CardTitle>
             <CardDescription>توزيع إجمالي المبيعات على فئات المنتجات.</CardDescription>
           </CardHeader>
+          <CardContent className="flex-1 pb-0"> {/* Allow chart to fill space */}
+            {isLoading ? (
+                <div className="flex justify-center items-center h-full">
+                    <Skeleton className="w-48 h-48 rounded-full" />
+                </div>
+            ) : categorySalesData.length > 0 ? (
+              <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-[300px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                         <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="label" />} />
+                          <Pie
+                              data={categorySalesData}
+                              dataKey="totalSales"
+                              nameKey="label" // Use Arabic label here
+                              cx="50%"
+                              cy="50%"
+                              outerRadius={100}
+                              innerRadius={60}
+                              paddingAngle={2}
+                              labelLine={false}
+                          >
+                             {categorySalesData.map((entry) => (
+                                <Cell key={`cell-${entry.name}`} fill={entry.fill} />
+                              ))}
+                          </Pie>
+                      </PieChart>
+                  </ResponsiveContainer>
+              </ChartContainer>
+            ) : (
+                <p className="text-muted-foreground text-center py-10 flex-1 flex items-center justify-center">لا توجد بيانات مبيعات لعرضها.</p>
+             )}
+          </CardContent>
+           {/* Optional: Add legend or total below chart if needed */}
+           {/* <CardFooter className="flex-col gap-2 text-sm"> ... </CardFooter> */}
         </Card>
 
          {/* Low Stock Products */}
@@ -258,4 +292,3 @@ export default function DashboardOverviewPage() {
    </div>
  );
 }
-

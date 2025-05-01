@@ -1,5 +1,4 @@
 
-
 import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem } from '@/lib/types';
 import { Pill, Baby, SprayCan, Activity } from 'lucide-react';
 
@@ -356,11 +355,13 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
 }
 
 
+// Function to get purchase transactions
 export async function getPurchases(): Promise<PurchaseTransaction[]> {
   await new Promise(resolve => setTimeout(resolve, 50));
   return [...samplePurchases].sort((a, b) => b.date.getTime() - a.date.getTime()); // Return sorted copy
 }
 
+// Function to add a purchase transaction and update product quantities
 export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id'>): Promise<PurchaseTransaction> {
     await new Promise(resolve => setTimeout(resolve, 50));
     const newPurchase: PurchaseTransaction = {
@@ -377,6 +378,7 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id'>)
         if (product) {
             const newQuantity = product.quantity + item.quantity;
             await updateProduct(item.productId, { quantity: newQuantity });
+            console.log(`Updated product ${item.productId} quantity to ${newQuantity}`);
         } else {
             console.warn(`Product with ID ${item.productId} not found during purchase update.`);
             // Handle adding the product if it doesn't exist (or log error)
@@ -394,5 +396,3 @@ export async function getProductNameById(id: string): Promise<string> {
     const product = await getProductById(id);
     return product ? product.nameAr : `منتج غير معروف (${id.substring(0,6)})`;
 }
-
-
