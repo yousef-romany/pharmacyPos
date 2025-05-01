@@ -16,7 +16,7 @@ body {
     --popover-foreground: 0 0% 3.9%;
     --primary: 180 100% 25%; /* Teal */
     --primary-foreground: 0 0% 98%; /* White */
-    --secondary: 0 0% 90%; /* Light Gray (adjusted) */
+    --secondary: 0 0% 96.1%; /* Lighter Gray for secondary background */
     --secondary-foreground: 0 0% 9%; /* Dark Gray */
     --muted: 0 0% 96.1%;
     --muted-foreground: 0 0% 45.1%;
@@ -24,8 +24,8 @@ body {
     --accent-foreground: 0 0% 9%; /* Black */
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 83%; /* Light Gray (#D3D3D3) */
-    --input: 0 0% 83%; /* Light Gray (#D3D3D3) */
+    --border: 0 0% 89.8%; /* Slightly darker border */
+    --input: 0 0% 89.8%; /* Match border */
     --ring: 180 100% 25%; /* Teal */
     --chart-1: 12 76% 61%;
     --chart-2: 173 58% 39%;
@@ -33,15 +33,18 @@ body {
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     --radius: 0.5rem;
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Sidebar Light Theme */
+    --sidebar-background: 0 0% 98%; /* Very Light Gray */
+    --sidebar-foreground: 0 0% 20%; /* Darker Gray for text */
+    --sidebar-border: 0 0% 90%; /* Slightly darker border */
+    --sidebar-primary: 180 100% 25%; /* Teal (Same as main primary) */
+    --sidebar-primary-foreground: 0 0% 98%; /* White */
+    --sidebar-accent: 0 0% 92%; /* Light Gray for hover/active */
+    --sidebar-accent-foreground: 0 0% 9%; /* Dark Gray for text on accent */
+    --sidebar-ring: 180 100% 30%; /* Slightly darker Teal for focus rings */
   }
+
   .dark {
     --background: 0 0% 3.9%;
     --foreground: 0 0% 98%;
@@ -57,7 +60,7 @@ body {
     --muted-foreground: 0 0% 63.9%;
     --accent: 51 100% 55%; /* Slightly lighter Gold for dark mode */
     --accent-foreground: 0 0% 9%; /* Black */
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 72.2% 50.6%; /* Adjusted destructive */
     --destructive-foreground: 0 0% 98%;
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
@@ -67,14 +70,16 @@ body {
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    /* Sidebar Dark Theme */
+    --sidebar-background: 0 0% 8%; /* Darker background */
+    --sidebar-foreground: 0 0% 80%; /* Lighter Gray text */
+    --sidebar-border: 0 0% 18%; /* Slightly lighter border */
+    --sidebar-primary: 180 100% 35%; /* Teal (Same as main primary dark) */
+    --sidebar-primary-foreground: 0 0% 9%; /* Black */
+    --sidebar-accent: 0 0% 20%; /* Darker Gray for hover/active */
+    --sidebar-accent-foreground: 0 0% 98%; /* White text on accent */
+    --sidebar-ring: 180 100% 40%; /* Lighter Teal for focus rings */
   }
 }
 
@@ -84,5 +89,7 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+     /* Prevent scrolling on body when sidebar might be fixed */
+     overflow-x: hidden;
   }
 }
