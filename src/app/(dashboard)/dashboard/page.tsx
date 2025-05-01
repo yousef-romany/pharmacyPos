@@ -154,15 +154,17 @@ export default function DashboardOverviewPage() {
   }, []); // Ensure useEffect closing is correct
 
    // Define chartConfig within the component scope, after state hooks
-   const chartConfig = React.useMemo(() => ({
-      ...categorySalesData.reduce((acc, cur) => {
-        acc[cur.name] = { label: cur.label, color: cur.fill };
-        return acc;
-      }, {} as Record<string, { label: string; color: string }>),
-       totalSales: { label: "إجمالي المبيعات (ر.س)" } // Ensure totalSales label exists
-    } as ChartConfig), [categorySalesData]); // Depend on categorySalesData
+   const chartConfig = React.useMemo(() => {
+      return {
+         ...categorySalesData.reduce((acc, cur) => {
+           acc[cur.name] = { label: cur.label, color: cur.fill };
+           return acc;
+         }, {} as Record<string, { label: string; color: string }>),
+          totalSales: { label: "إجمالي المبيعات (ر.س)" } // Ensure totalSales label exists
+      } as ChartConfig;
+   }, [categorySalesData]); // Depend on categorySalesData
 
-
+   // Ensure syntax is correct before the return statement
    return (
      <div className="p-4 md:p-6 space-y-6">
        <h2 className="text-2xl font-semibold">لوحة التحكم الرئيسية</h2>
@@ -283,3 +285,4 @@ export default function DashboardOverviewPage() {
      </div>
    );
  }
+    
