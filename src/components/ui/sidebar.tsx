@@ -548,9 +548,10 @@ const SidebarMenuButton = React.forwardRef<
     const Comp = asChild ? Slot : (props as any).href ? 'a' : 'button'; // Detect if it's a link
     const { isMobile, state, side, toggleSidebar } = useSidebar(); // Get sidebar state
 
-    const buttonElement = (
-        <Comp
-            ref={ref as any} // Type assertion might be needed depending on Comp
+    // Core button/link/slot structure
+    const ButtonElement = React.forwardRef<HTMLButtonElement | HTMLAnchorElement, any>((buttonProps, buttonRef) => (
+         <Comp
+            ref={buttonRef}
             data-sidebar="menu-button"
             data-size={size}
             data-active={isActive}
@@ -562,15 +563,18 @@ const SidebarMenuButton = React.forwardRef<
                  }
                  (props as any).onClick?.(e); // Call original onClick if exists
              }}
-            {...props} // Spread remaining props
+            {...buttonProps} // Spread any additional props from wrapper (like TooltipTrigger)
+            {...props} // Spread original props
         >
             {children} {/* Render children (icon, span) */}
         </Comp>
-    );
+    ));
+    ButtonElement.displayName = 'ButtonElement';
 
 
     if (!tooltip || state === 'expanded' || isMobile) {
-        return buttonElement; // Render button directly if no tooltip, expanded, or mobile
+        // Render button directly if no tooltip, expanded, or mobile
+         return <ButtonElement ref={ref} />;
     }
 
     // Tooltip specific props
@@ -578,27 +582,12 @@ const SidebarMenuButton = React.forwardRef<
         typeof tooltip === 'string' ? {} : tooltip; // If tooltip is string, use default props
 
 
-    // IMPORTANT FIX: Wrap the base buttonElement in TooltipTrigger ONLY when tooltip is active
+    // Wrap the ButtonElement with TooltipTrigger when tooltip is active
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                {/* Render the base button/link here */}
-                 <Comp
-                    ref={ref as any}
-                    data-sidebar="menu-button" // Add data attributes here too for consistency if needed
-                    data-size={size}
-                    data-active={isActive}
-                    className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
-                     onClick={(e) => {
-                         if (isMobile) {
-                             toggleSidebar();
-                         }
-                         (props as any).onClick?.(e);
-                     }}
-                    {...props}
-                 >
-                    {children}
-                 </Comp>
+                 {/* Pass the ref down to the ButtonElement */}
+                <ButtonElement ref={ref} />
             </TooltipTrigger>
             <TooltipContent
                 side={side === 'right' ? 'left' : 'right'} // Adjust tooltip side based on sidebar side
