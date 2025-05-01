@@ -13,9 +13,9 @@
  import { Button } from '@/components/ui/button';
  import { Input } from '@/components/ui/input';
  import { useToast } from '@/hooks/use-toast';
- import { Truck, Eye, Printer } from 'lucide-react'; // Added icons
+ import { Truck, Eye, Printer, PlusCircle } from 'lucide-react'; // Added icons
  import type { PurchaseTransaction, PurchaseTransactionItem, Supplier } from '@/lib/types'; // Import types
- import { getPurchases, getSuppliers, getProductNameById } from '@/lib/data'; // Import data fetching functions
+ import { getPurchases, getSuppliers, getProductNameById, addPurchase } from '@/lib/data'; // Import data fetching functions
  import {
    Dialog,
    DialogContent,
@@ -27,6 +27,8 @@
  } from '@/components/ui/dialog';
  import { Separator } from '@/components/ui/separator';
  import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
+ import { PurchaseForm } from '@/components/purchases/purchase-form'; // Import the new form component
+
 
  // --- Purchase Details Dialog ---
  interface PurchaseDetailsDialogProps {
@@ -221,10 +223,12 @@
 
  export default function PurchasesPage() {
    const [purchases, setPurchases] = React.useState<PurchaseTransaction[]>([]);
-   const [suppliers, setSuppliers] = React.useState<Map<string, string>>(new Map()); // Map supplier ID to name
+   const [suppliersMap, setSuppliersMap] = React.useState<Map<string, string>>(new Map()); // Map supplier ID to name
+   const [allSuppliers, setAllSuppliers] = React.useState<Supplier[]>([]); // For form dropdown
    const [isLoading, setIsLoading] = React.useState(true);
    const [searchTerm, setSearchTerm] = React.useState('');
    const [selectedPurchase, setSelectedPurchase] = React.useState<PurchaseTransaction | null>(null); // For details dialog
+   const [isPurchaseFormOpen, setIsPurchaseFormOpen] = React.useState(false); // State for Add Purchase Dialog
    const { toast } = useToast();
 
    const fetchData = React.useCallback(async () => {
@@ -236,10 +240,11 @@
          ]);
 
        setPurchases(purchasesData);
+       setAllSuppliers(suppliersData); // Store all supplier data
 
        const supplierMap = new Map<string, string>();
        suppliersData.forEach(s => supplierMap.set(s.id, s.name));
-       setSuppliers(supplierMap);
+       setSuppliersMap(supplierMap);
 
      } catch (error) {
        console.error("Failed to fetch purchase data:", error);
@@ -253,94 +258,124 @@
       fetchData();
    }, [fetchData]); // Run on mount
 
+   const handleAddPurchase = async (purchaseData: Omit<PurchaseTransaction, 'id'>) => {
+     try {
+        await addPurchase(purchaseData);
+        toast({ title: "نجاح", description: "تمت إضافة فاتورة الشراء بنجاح وتحديث المخزون." });
+        setIsPurchaseFormOpen(false); // Close the form dialog
+        fetchData(); // Refresh the list of purchases
+     } catch (error) {
+       console.error("Failed to add purchase:", error);
+       toast({ title: "خطأ", description: "فشلت إضافة فاتورة الشراء.", variant: "destructive" });
+     }
+   };
+
 
    const filteredPurchases = purchases.filter(purchase =>
      purchase.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     suppliers.get(purchase.supplierId)?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+     suppliersMap.get(purchase.supplierId)?.toLowerCase().includes(searchTerm.toLowerCase()) ||
      purchase.items.some(item => item.productId.toLowerCase().includes(searchTerm.toLowerCase()))
       // TODO: Enhance search to fetch product names if needed for searching item names
    );
 
    return (
-     <Dialog onOpenChange={(open) => !open && setSelectedPurchase(null)}> {/* Reset selectedPurchase on dialog close */}
-         <div className="p-4 md:p-6 space-y-4">
-           <div className="flex items-center justify-between">
-             <h2 className="text-2xl font-semibold flex items-center gap-2">
-               <Truck className="w-6 h-6" />
-               فواتير الشراء
-             </h2>
-             {/* Add New Purchase Button (Optional) */}
-             {/* <Button>
-               <PlusCircle className="ml-2 h-5 w-5" />
-               إنشاء فاتورة شراء
-             </Button> */}
-           </div>
+      // Dialog for Add Purchase Form
+     <Dialog open={isPurchaseFormOpen} onOpenChange={setIsPurchaseFormOpen}>
+        {/* Main page content wrapped in another Dialog provider for the Details view */}
+        <Dialog onOpenChange={(open) => !open && setSelectedPurchase(null)}>
+             <div className="p-4 md:p-6 space-y-4">
+               <div className="flex items-center justify-between">
+                 <h2 className="text-2xl font-semibold flex items-center gap-2">
+                   <Truck className="w-6 h-6" />
+                   فواتير الشراء
+                 </h2>
+                 {/* Add New Purchase Button */}
+                  <DialogTrigger asChild>
+                     <Button onClick={() => setIsPurchaseFormOpen(true)}>
+                       <PlusCircle className="ml-2 h-5 w-5" />
+                       إنشاء فاتورة شراء
+                     </Button>
+                 </DialogTrigger>
+               </div>
 
-            <div className="flex items-center py-4">
-             <Input
-               placeholder="ابحث برقم الفاتورة, المورد, أو كود المنتج..."
-               value={searchTerm}
-               onChange={(event) => setSearchTerm(event.target.value)}
-               className="max-w-md"
-             />
-           </div>
+                <div className="flex items-center py-4">
+                 <Input
+                   placeholder="ابحث برقم الفاتورة, المورد, أو كود المنتج..."
+                   value={searchTerm}
+                   onChange={(event) => setSearchTerm(event.target.value)}
+                   className="max-w-md"
+                 />
+               </div>
 
-           <div className="rounded-md border">
-             <Table>
-               <TableHeader>
-                 <TableRow>
-                   <TableHead>رقم الفاتورة</TableHead>
-                   <TableHead>المورد</TableHead>
-                   <TableHead>تاريخ الفاتورة</TableHead>
-                   <TableHead>إجمالي المبلغ (ر.س)</TableHead>
-                    <TableHead>عدد الأصناف</TableHead>
-                   <TableHead className="text-right">إجراءات</TableHead>
-                 </TableRow>
-               </TableHeader>
-               <TableBody>
-                 {isLoading ? (
-                   <TableRow>
-                     <TableCell colSpan={6} className="h-24 text-center">
-                       جاري تحميل الفواتير...
-                     </TableCell>
-                   </TableRow>
-                 ) : filteredPurchases.length > 0 ? (
-                   filteredPurchases.map((purchase) => (
-                     <TableRow key={purchase.id}>
-                       <TableCell className="font-medium">{purchase.id}</TableCell>
-                       <TableCell>{suppliers.get(purchase.supplierId) || purchase.supplierId}</TableCell>
-                       <TableCell>{purchase.date.toLocaleDateString('ar-SA')}</TableCell>
-                       <TableCell>{purchase.totalAmount.toFixed(2)}</TableCell>
-                       <TableCell>{purchase.items.length}</TableCell>
-                       <TableCell className="text-right">
-                         <DialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedPurchase(purchase)}>
-                                 <Eye className="h-4 w-4" />
-                              </Button>
-                         </DialogTrigger>
-                          {/* Add Edit button later if needed */}
-                       </TableCell>
+               <div className="rounded-md border">
+                 <Table>
+                   <TableHeader>
+                     <TableRow>
+                       <TableHead>رقم الفاتورة</TableHead>
+                       <TableHead>المورد</TableHead>
+                       <TableHead>تاريخ الفاتورة</TableHead>
+                       <TableHead>إجمالي المبلغ (ر.س)</TableHead>
+                        <TableHead>عدد الأصناف</TableHead>
+                       <TableHead className="text-right">إجراءات</TableHead>
                      </TableRow>
-                   ))
-                 ) : (
-                   <TableRow>
-                     <TableCell colSpan={6} className="h-24 text-center">
-                       لا توجد فواتير شراء لعرضها.
-                     </TableCell>
-                   </TableRow>
-                 )}
-               </TableBody>
-             </Table>
-           </div>
-            {/* Add Pagination later if needed */}
-         </div>
+                   </TableHeader>
+                   <TableBody>
+                     {isLoading ? (
+                       <TableRow>
+                         <TableCell colSpan={6} className="h-24 text-center">
+                           جاري تحميل الفواتير...
+                         </TableCell>
+                       </TableRow>
+                     ) : filteredPurchases.length > 0 ? (
+                       filteredPurchases.map((purchase) => (
+                         <TableRow key={purchase.id}>
+                           <TableCell className="font-medium">{purchase.id}</TableCell>
+                           <TableCell>{suppliersMap.get(purchase.supplierId) || purchase.supplierId}</TableCell>
+                           <TableCell>{purchase.date.toLocaleDateString('ar-SA')}</TableCell>
+                           <TableCell>{purchase.totalAmount.toFixed(2)}</TableCell>
+                           <TableCell>{purchase.items.length}</TableCell>
+                           <TableCell className="text-right">
+                             <DialogTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedPurchase(purchase)}>
+                                     <Eye className="h-4 w-4" />
+                                  </Button>
+                             </DialogTrigger>
+                              {/* Add Edit button later if needed */}
+                           </TableCell>
+                         </TableRow>
+                       ))
+                     ) : (
+                       <TableRow>
+                         <TableCell colSpan={6} className="h-24 text-center">
+                           لا توجد فواتير شراء لعرضها.
+                         </TableCell>
+                       </TableRow>
+                     )}
+                   </TableBody>
+                 </Table>
+               </div>
+                {/* Add Pagination later if needed */}
+             </div>
 
-          {/* Purchase Details Dialog Content */}
-          <PurchaseDetailsDialog
-             purchase={selectedPurchase}
-             supplierName={selectedPurchase ? suppliers.get(selectedPurchase.supplierId) : undefined}
-             onClose={() => setSelectedPurchase(null)}
-          />
+              {/* Purchase Details Dialog Content */}
+              <PurchaseDetailsDialog
+                 purchase={selectedPurchase}
+                 supplierName={selectedPurchase ? suppliersMap.get(selectedPurchase.supplierId) : undefined}
+                 onClose={() => setSelectedPurchase(null)}
+              />
+        </Dialog>
+
+          {/* Add Purchase Form Dialog Content */}
+         <DialogContent className="sm:max-w-3xl"> {/* Wider dialog for the form */}
+            <DialogHeader>
+               <DialogTitle>إنشاء فاتورة شراء جديدة</DialogTitle>
+            </DialogHeader>
+             <PurchaseForm
+                suppliers={allSuppliers}
+                onSubmit={handleAddPurchase}
+                onClose={() => setIsPurchaseFormOpen(false)}
+            />
+         </DialogContent>
      </Dialog>
    );
  }
