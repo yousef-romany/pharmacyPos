@@ -1,4 +1,3 @@
-
 "use client"; // Required for hooks like useState, useEffect, and custom hooks
 
 import * as React from 'react';
@@ -155,7 +154,7 @@ export default function PharmacyPosPage() {
              <AlertDialogHeader>
                  <AlertDialogTitle>المنتج "{originalScannedProduct?.nameAr}" غير متوفر</AlertDialogTitle>
                  <AlertDialogDescription>
-                     هل ترغب بإضافة أحد البدائل التالية للسلة؟
+                     هل ترغب بإضافة أحد البدائل التالية للسلة؟ (نفس المادة الفعالة)
                  </AlertDialogDescription>
              </AlertDialogHeader>
              <div className="max-h-60 overflow-y-auto py-4 space-y-2">

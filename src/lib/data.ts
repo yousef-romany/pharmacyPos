@@ -1,4 +1,3 @@
-
 import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User, ProductExpiryInfo, InventoryReportItem, PaymentMethod, PaymentStatus, UserRole } from '@/lib/types';
 import { Pill, Baby, SprayCan, Activity } from 'lucide-react';
 import { differenceInDays, addDays, isBefore, isSameDay } from 'date-fns';
