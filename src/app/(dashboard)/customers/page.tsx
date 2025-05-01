@@ -45,10 +45,11 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit, Trash2, User, Coins } from 'lucide-react'; // Added Coins icon
+import { PlusCircle, Edit, Trash2, User, Coins, ShieldCheck } from 'lucide-react'; // Added ShieldCheck icon
 import type { Customer } from '@/lib/types';
 import { getCustomers, addCustomer, updateCustomer, deleteCustomer } from '@/lib/data';
 import { cn } from '@/lib/utils'; // Import cn
+import { Separator } from '@/components/ui/separator'; // Import Separator
 
 // --- Customer Form ---
 interface CustomerFormProps {
@@ -64,15 +65,21 @@ function CustomerForm({ initialData, onSubmit, onClose }: CustomerFormProps) {
     email: initialData?.email || '',
     address: initialData?.address || '',
     balance: initialData?.balance || 0, // Add balance field
+    insuranceCompany: initialData?.insuranceCompany || '',
+    policyNumber: initialData?.policyNumber || '',
+    insuranceDiscountRate: initialData?.insuranceDiscountRate || undefined,
   });
     const [isLoading, setIsLoading] = React.useState(false);
+    const { toast } = useToast();
 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({
         ...prev,
-        [name]: name === 'balance' ? parseFloat(value) || 0 : value, // Parse balance as float
+        [name]: name === 'balance' ? parseFloat(value) || 0 // Parse balance as float
+              : name === 'insuranceDiscountRate' ? parseFloat(value) || undefined // Parse insurance rate
+              : value,
     }));
   };
 
@@ -80,6 +87,13 @@ function CustomerForm({ initialData, onSubmit, onClose }: CustomerFormProps) {
     e.preventDefault();
     setIsLoading(true);
      try {
+         // Validate insurance rate
+        if (formData.insuranceDiscountRate !== undefined && (formData.insuranceDiscountRate < 0 || formData.insuranceDiscountRate > 100)) {
+            toast({ title: "خطأ", description: "نسبة خصم التأمين يجب أن تكون بين 0 و 100.", variant: "destructive" });
+            setIsLoading(false);
+            return;
+        }
+
         const customerData = initialData ? { ...initialData, ...formData } : formData;
         await onSubmit(customerData);
         onClose(); // Close dialog on success
@@ -93,36 +107,68 @@ function CustomerForm({ initialData, onSubmit, onClose }: CustomerFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <Label htmlFor="name">اسم العميل</Label>
-        <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
+      {/* Basic Info */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="name">اسم العميل <span className="text-destructive">*</span></Label>
+            <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
+          </div>
+          <div>
+            <Label htmlFor="phone">رقم الهاتف</Label>
+            <Input id="phone" name="phone" type="tel" value={formData.phone || ''} onChange={handleChange} />
+          </div>
+          <div>
+            <Label htmlFor="email">البريد الإلكتروني</Label>
+            <Input id="email" name="email" type="email" value={formData.email || ''} onChange={handleChange} />
+          </div>
+          <div>
+            <Label htmlFor="address">العنوان</Label>
+            <Input id="address" name="address" value={formData.address || ''} onChange={handleChange} />
+          </div>
       </div>
-      <div>
-        <Label htmlFor="phone">رقم الهاتف</Label>
-        <Input id="phone" name="phone" type="tel" value={formData.phone || ''} onChange={handleChange} />
+
+      <Separator/>
+
+      {/* Financial Info */}
+      <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+           <div>
+            <Label htmlFor="balance">الرصيد (المديونية/الائتمان)</Label>
+            <Input
+                id="balance"
+                name="balance"
+                type="number"
+                step="0.01"
+                value={formData.balance}
+                onChange={handleChange}
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+                 أدخل قيمة سالبة للمديونية (عليه)، وقيمة موجبة للائتمان (له).
+             </p>
+          </div>
       </div>
-      <div>
-        <Label htmlFor="email">البريد الإلكتروني</Label>
-        <Input id="email" name="email" type="email" value={formData.email || ''} onChange={handleChange} />
-      </div>
-      <div>
-        <Label htmlFor="address">العنوان</Label>
-        <Input id="address" name="address" value={formData.address || ''} onChange={handleChange} />
-      </div>
-       <div>
-        <Label htmlFor="balance">الرصيد (المديونية/الائتمان)</Label>
-        <Input
-            id="balance"
-            name="balance"
-            type="number"
-            step="0.01"
-            value={formData.balance}
-            onChange={handleChange}
-        />
-         <p className="text-xs text-muted-foreground mt-1">
-             أدخل قيمة سالبة للمديونية (عليه)، وقيمة موجبة للائتمان (له).
-         </p>
-      </div>
+
+      <Separator/>
+
+      {/* Insurance Info */}
+       <h4 className="text-md font-medium">بيانات التأمين (اختياري)</h4>
+       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <Label htmlFor="insuranceCompany">شركة التأمين</Label>
+            <Input id="insuranceCompany" name="insuranceCompany" value={formData.insuranceCompany || ''} onChange={handleChange} />
+          </div>
+          <div>
+            <Label htmlFor="policyNumber">رقم البوليصة</Label>
+            <Input id="policyNumber" name="policyNumber" value={formData.policyNumber || ''} onChange={handleChange} />
+          </div>
+          <div>
+            <Label htmlFor="insuranceDiscountRate">نسبة الخصم (%)</Label>
+            <Input id="insuranceDiscountRate" name="insuranceDiscountRate" type="number" min="0" max="100" step="0.01" placeholder="مثال: 10" value={formData.insuranceDiscountRate || ''} onChange={handleChange} />
+             <p className="text-xs text-muted-foreground mt-1">
+                نسبة الخصم التي يتحملها التأمين (0-100).
+            </p>
+          </div>
+       </div>
+
       <DialogFooter>
          <DialogClose asChild>
             <Button type="button" variant="outline" onClick={onClose}>إلغاء</Button>
@@ -215,14 +261,20 @@ export default function CustomersPage() {
         size: 120,
      },
     {
-        accessorKey: "email",
-        header: "البريد الإلكتروني",
-        size: 180,
-    },
-    {
-        accessorKey: "address",
-        header: "العنوان",
-        size: 200,
+        accessorKey: "insuranceCompany",
+        header: "التأمين",
+         cell: ({ row }) => {
+             const customer = row.original;
+             if (!customer.insuranceCompany) return '-';
+             return (
+                 <div className='flex flex-col text-xs'>
+                     <span className='font-medium'>{customer.insuranceCompany}</span>
+                      {customer.policyNumber && <span className='text-muted-foreground'>#{customer.policyNumber}</span>}
+                      {customer.insuranceDiscountRate !== undefined && <span className='text-blue-600'>خصم: {customer.insuranceDiscountRate}%</span>}
+                 </div>
+             )
+         },
+        size: 150,
     },
     {
         accessorKey: "balance",
@@ -311,14 +363,23 @@ export default function CustomersPage() {
                 </DialogTrigger>
               </div>
 
-               <div className="flex items-center py-4">
+               <div className="flex items-center py-4 gap-4 flex-wrap">
                  <Input
-                    placeholder="ابحث باسم العميل..."
+                    placeholder="ابحث باسم العميل أو الهاتف..."
                     value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-                    onChange={(event) =>
-                        table.getColumn("name")?.setFilterValue(event.target.value)
-                    }
+                    onChange={(event) => {
+                         table.getColumn("name")?.setFilterValue(event.target.value);
+                         table.getColumn("phone")?.setFilterValue(event.target.value); // Search both
+                    }}
                     className="max-w-sm"
+                 />
+                  <Input
+                    placeholder="ابحث بشركة التأمين..."
+                    value={(table.getColumn("insuranceCompany")?.getFilterValue() as string) ?? ""}
+                    onChange={(event) =>
+                        table.getColumn("insuranceCompany")?.setFilterValue(event.target.value)
+                    }
+                    className="max-w-xs"
                  />
              </div>
 
@@ -403,7 +464,7 @@ export default function CustomersPage() {
             </div>
 
              {/* Dialog Content for Add/Edit */}
-            <DialogContent className="sm:max-w-md"> {/* Adjust width if needed */}
+            <DialogContent className="sm:max-w-2xl"> {/* Adjust width */}
                 <DialogHeader>
                  <DialogTitle>{editingCustomer ? 'تعديل العميل' : 'إضافة عميل جديد'}</DialogTitle>
                 </DialogHeader>

@@ -11,6 +11,7 @@ let sampleProducts: Product[] = [
     nameEn: 'Panadol Extra',
     manufacturer: 'GSK',
     concentration: '500mg Paracetamol, 65mg Caffeine',
+    activeIngredient: 'Paracetamol, Caffeine', // Added
     price: 15.50,
     lastPurchaseCost: 10.50, // Added
     quantity: 8,
@@ -29,6 +30,7 @@ let sampleProducts: Product[] = [
     nameEn: 'Vitamin C Effervescent',
     manufacturer: 'Generic Pharma',
     concentration: '1000mg Vitamin C',
+    activeIngredient: 'Ascorbic Acid', // Added
     price: 22.00,
     lastPurchaseCost: 16.00, // Added
     quantity: 80,
@@ -45,9 +47,10 @@ let sampleProducts: Product[] = [
     nameAr: 'حليب أطفال المرحلة 1',
     nameEn: 'Baby Milk Stage 1',
     manufacturer: 'Nestle',
+    // No active ingredient for milk
     price: 55.75,
     lastPurchaseCost: 45.00, // Added
-    quantity: 45,
+    quantity: 0, // Out of stock
     categoryIcon: Baby,
     barcode: '6281060000034',
     unitType: 'علبة',
@@ -60,6 +63,7 @@ let sampleProducts: Product[] = [
     nameEn: 'Nasal Spray',
     manufacturer: 'Pharma Co.',
     concentration: '0.05% Oxymetazoline',
+    activeIngredient: 'Oxymetazoline', // Added
     price: 30.00,
     lastPurchaseCost: 20.00, // Added
     quantity: 60,
@@ -75,6 +79,7 @@ let sampleProducts: Product[] = [
     nameEn: 'Pain Relief Tablets',
     manufacturer: 'Jamjoom Pharma',
     concentration: '400mg Ibuprofen',
+    activeIngredient: 'Ibuprofen', // Added
     price: 12.25,
     lastPurchaseCost: 8.00, // Added
     quantity: 200,
@@ -91,6 +96,7 @@ let sampleProducts: Product[] = [
     nameAr: 'مكمل غذائي حديد',
     nameEn: 'Iron Supplement',
     manufacturer: 'VitaHealth',
+    activeIngredient: 'Ferrous Sulfate', // Added
     price: 40.00,
     lastPurchaseCost: 28.00, // Added
     quantity: 5,
@@ -105,6 +111,7 @@ let sampleProducts: Product[] = [
     nameAr: 'كريم حفاضات للأطفال',
     nameEn: 'Baby Diaper Cream',
     manufacturer: 'Sudocrem',
+    activeIngredient: 'Zinc Oxide', // Added
     price: 25.50,
     lastPurchaseCost: 18.00, // Added
     quantity: 70,
@@ -120,6 +127,7 @@ let sampleProducts: Product[] = [
     nameAr: 'شراب سعال',
     nameEn: 'Cough Syrup',
     manufacturer: 'Prospan',
+    activeIngredient: 'Ivy Leaf Extract', // Added
     price: 18.00,
     lastPurchaseCost: 12.50, // Added
     quantity: 110,
@@ -128,6 +136,38 @@ let sampleProducts: Product[] = [
     unitType: 'زجاجة',
     expiryDate: addDays(new Date(), 500),
     minStockLevel: 30,
+  },
+   {
+    id: 'prod-009', // Alternative for Panadol Extra
+    nameAr: 'أدول اكسترا',
+    nameEn: 'Adol Extra',
+    manufacturer: 'Julphar',
+    concentration: '500mg Paracetamol, 65mg Caffeine',
+    activeIngredient: 'Paracetamol, Caffeine', // Same active ingredient
+    price: 14.00,
+    lastPurchaseCost: 10.00,
+    quantity: 50, // In stock
+    categoryIcon: Pill,
+    barcode: '6291103620014',
+    unitType: 'علبة',
+    subUnitType: 'شريط',
+    subUnitsPerUnit: 2,
+    expiryDate: addDays(new Date(), 365),
+    minStockLevel: 10,
+  },
+   {
+    id: 'prod-010', // Alternative for Baby Milk Stage 1 (similar purpose)
+    nameAr: 'حليب أطفال المرحلة 1 - بديل',
+    nameEn: 'Baby Milk Stage 1 - Alt',
+    manufacturer: 'Danone',
+    price: 60.00,
+    lastPurchaseCost: 48.00,
+    quantity: 30, // In stock
+    categoryIcon: Baby,
+    barcode: '3033490000000', // Example barcode
+    unitType: 'علبة',
+    expiryDate: addDays(new Date(), 120),
+    minStockLevel: 15,
   },
 ];
 
@@ -173,6 +213,7 @@ export async function addProduct(productData: Omit<Product, 'id'>): Promise<Prod
     nameEn: productData.nameEn,
     manufacturer: productData.manufacturer,
     concentration: productData.concentration,
+    activeIngredient: productData.activeIngredient, // Added
     price: productData.price || 0,
     lastPurchaseCost: productData.lastPurchaseCost, // Store initial purchase cost if provided
     quantity: productData.quantity || 0,
@@ -330,6 +371,9 @@ let sampleCustomers: Customer[] = [
     phone: '050-1122334',
     address: 'الرياض، حي الملز',
     balance: -50.00, // Has debt
+    insuranceCompany: 'بوبا',
+    policyNumber: 'BUPA-12345',
+    insuranceDiscountRate: 10, // 10% discount for this customer
   },
   {
     id: 'cust-002',
@@ -337,12 +381,16 @@ let sampleCustomers: Customer[] = [
     phone: '055-9988776',
     email: 'fatima.z@email.com',
     balance: 0,
+    // No insurance
   },
    {
     id: 'cust-003',
     name: 'علي الشهري',
     address: 'جدة، حي الشاطئ',
     balance: 100.00, // Has credit
+    insuranceCompany: 'التعاونية',
+    policyNumber: 'TAW-67890',
+    insuranceDiscountRate: 5, // 5% discount
   },
 ];
 
@@ -357,6 +405,10 @@ export async function addCustomer(customerData: Omit<Customer, 'id'>): Promise<C
     ...customerData,
     id: `cust-${Date.now().toString()}-${Math.random().toString(16).substring(2, 8)}`,
     balance: customerData.balance ?? 0, // Initialize balance
+    // Initialize insurance fields if not provided
+    insuranceCompany: customerData.insuranceCompany || undefined,
+    policyNumber: customerData.policyNumber || undefined,
+    insuranceDiscountRate: customerData.insuranceDiscountRate || undefined,
   };
   sampleCustomers.push(newCustomer);
    console.log("Added Customer:", newCustomer);
@@ -368,10 +420,15 @@ export async function updateCustomer(id: string, updates: Partial<Customer>): Pr
   await new Promise(resolve => setTimeout(resolve, 50));
   const index = sampleCustomers.findIndex(c => c.id === id);
   if (index === -1) return null;
-  // Ensure balance is handled correctly
+  // Ensure balance and insurance rate are handled correctly
   const updatedCustomer = { ...sampleCustomers[index], ...updates };
-   if (typeof updatedCustomer.balance !== 'number') {
+   if (updates.balance !== undefined && typeof updates.balance !== 'number') {
      updatedCustomer.balance = sampleCustomers[index].balance ?? 0;
+   }
+   if (updates.insuranceDiscountRate !== undefined) {
+       updatedCustomer.insuranceDiscountRate = typeof updates.insuranceDiscountRate === 'number' && updates.insuranceDiscountRate >= 0 && updates.insuranceDiscountRate <= 100
+           ? updates.insuranceDiscountRate
+           : undefined;
    }
   sampleCustomers[index] = updatedCustomer;
    console.log("Updated Customer:", sampleCustomers[index]);
@@ -406,13 +463,17 @@ export async function getSales(): Promise<SaleTransaction[]> {
     })).sort((a, b) => b.date.getTime() - a.date.getTime());
 }
 
-// Function to add a sale and update product quantities & costAtSale
+// Function to add a sale and update product quantities, costAtSale, and customer balance/insurance
 export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<SaleTransaction> {
     await new Promise(resolve => setTimeout(resolve, 50)); // Simulate delay
 
+    const customer = saleData.customerId ? await getCustomerById(saleData.customerId) : undefined;
+    const insuranceRate = customer?.insuranceDiscountRate ?? 0;
+
      // Calculate original total amount before discount and prepare items with cost
-    const calculateOriginalTotalAndPrepareItems = async (items: SaleTransactionItem[]): Promise<{ originalTotal: number; preparedItems: SaleTransactionItem[] }> => {
+    const calculateOriginalTotalAndPrepareItems = async (items: SaleTransactionItem[]): Promise<{ originalTotal: number; subTotal: number; preparedItems: SaleTransactionItem[] }> => {
         let originalTotal = 0;
+        let subTotal = 0; // Total after product discount, before insurance
         const preparedItems: SaleTransactionItem[] = [];
         for (const item of items) {
             const product = await getProductById(item.productId);
@@ -422,27 +483,35 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
                      ? product.price / product.subUnitsPerUnit
                      : product.price;
                  originalTotal += originalPrice * item.quantity;
+                 subTotal += item.price * item.quantity; // item.price is already discounted (product discount)
             } else {
                  // Fallback if product details are missing, use the sale price as original
                  originalTotal += item.price * item.quantity;
+                 subTotal += item.price * item.quantity;
             }
             preparedItems.push({ ...item, costAtSale });
         }
-        return { originalTotal, preparedItems };
+        return { originalTotal, subTotal, preparedItems };
     };
 
 
-    const { originalTotal, preparedItems } = await calculateOriginalTotalAndPrepareItems(saleData.items);
+    const { originalTotal, subTotal, preparedItems } = await calculateOriginalTotalAndPrepareItems(saleData.items);
+
+     // Apply insurance discount to the subtotal (after product discounts)
+     const finalTotalAmount = subTotal * (1 - (insuranceRate / 100));
+
 
     const newSale: SaleTransaction = {
         customerId: saleData.customerId,
         items: preparedItems, // Use items with costAtSale
-        totalAmount: saleData.totalAmount,
+        totalAmount: finalTotalAmount, // Final amount after all discounts
+        subTotalAmount: subTotal, // Amount after product discount
         paymentMethod: saleData.paymentMethod,
         amountPaid: saleData.amountPaid,
         id: `sale-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`, // Unique sale ID
         date: saleData.date || new Date(), // Ensure date exists
-        originalTotalAmount: originalTotal, // Store original total
+        originalTotalAmount: originalTotal, // Store original total before any discount
+        appliedInsuranceDiscountRate: insuranceRate, // Store the applied rate
     };
     sampleSales.push(newSale);
     console.log("Added Sale:", newSale);
@@ -473,18 +542,16 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
 
     // --- Update Customer Balance if it's a debt transaction ---
     if (newSale.customerId && newSale.paymentMethod === 'debt') {
-       const customer = await getCustomerById(newSale.customerId);
-       if (customer) {
-           const debtAmount = newSale.totalAmount - newSale.amountPaid; // Calculate the debt incurred
+       // Customer balance is already updated if a customer object was passed,
+       // here we handle the debt calculation specifically for the transaction record.
+       const debtAmount = newSale.totalAmount - newSale.amountPaid; // Calculate the debt incurred from *this specific transaction*
+       if (debtAmount > 0 && customer) {
            const newBalance = (customer.balance ?? 0) - debtAmount; // Decrease balance (more negative means more debt)
            await updateCustomer(newSale.customerId, { balance: newBalance });
-           console.log(`Updated customer ${newSale.customerId} balance to ${newBalance}`);
-       } else {
-            console.warn(`Customer with ID ${newSale.customerId} not found for debt update.`);
+           console.log(`Updated customer ${newSale.customerId} balance to ${newBalance} due to debt`);
        }
     } else if (newSale.customerId && newSale.paymentMethod !== 'debt' && newSale.amountPaid > newSale.totalAmount) {
         // Handle overpayment potentially increasing balance (credit)
-         const customer = await getCustomerById(newSale.customerId);
          if (customer) {
              const creditAmount = newSale.amountPaid - newSale.totalAmount;
              const newBalance = (customer.balance || 0) + creditAmount;
@@ -689,6 +756,27 @@ export async function getExpiredProducts(): Promise<ProductExpiryInfo[]> {
         daysUntilExpiry,
     }));
 }
+
+// --- Alternative Product Logic ---
+export async function findAlternativeProducts(productId: string): Promise<Product[]> {
+    await new Promise(resolve => setTimeout(resolve, 70)); // Simulate slightly longer delay
+    const originalProduct = await getProductById(productId);
+    if (!originalProduct || !originalProduct.activeIngredient) {
+        return []; // Cannot find alternatives without active ingredient
+    }
+
+    const allProducts = await getProducts();
+    const alternatives = allProducts.filter(p =>
+        p.id !== productId && // Not the same product
+        p.activeIngredient && // Must have an active ingredient defined
+        p.activeIngredient.toLowerCase() === originalProduct.activeIngredient!.toLowerCase() // Match active ingredient (case-insensitive)
+        // Add more sophisticated matching logic here if needed (e.g., concentration, form)
+    );
+
+    return alternatives;
+}
+
+
 
 // --- Reports (Placeholders - Implement complex logic later) ---
 

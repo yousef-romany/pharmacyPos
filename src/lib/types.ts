@@ -1,3 +1,4 @@
+import type { LucideIcon } from 'lucide-react'; // Import LucideIcon
 
 export interface Product {
   id: string;
@@ -5,10 +6,11 @@ export interface Product {
   nameEn: string;
   manufacturer?: string; // الشركة المصنعة
   concentration?: string; // التركيز
+  activeIngredient?: string; // المادة الفعالة (new)
   price: number; // Price of the main unit (e.g., box) - سعر البيع
   lastPurchaseCost?: number; // Optional: Last purchase cost per main unit - آخر سعر شراء للوحدة الرئيسية
   quantity: number; // Quantity of the main unit in stock (can be fractional)
-  categoryIcon?: React.ComponentType<{ className?: string }>; // Optional icon component
+  categoryIcon?: React.ComponentType<{ className?: string }> | LucideIcon; // Allow LucideIcon
   barcode?: string; // Optional barcode field
   unitType: string; // e.g., 'علبة', 'شريط', 'حبة' - النوع الأساسي
   subUnitType?: string; // Optional: e.g., 'شريط', 'حبة'
@@ -40,6 +42,9 @@ export interface Customer {
   email?: string;
   address?: string;
   balance?: number; // Customer balance (positive for credit, negative for debt/مديونية) - Default 0
+  insuranceCompany?: string; // Optional: Insurance company name
+  policyNumber?: string; // Optional: Insurance policy number
+  insuranceDiscountRate?: number; // Optional: Insurance discount percentage (0-100) applied *after* product discounts
 }
 
 // Basic types for transactions, can be expanded later
@@ -57,11 +62,13 @@ export interface SaleTransaction {
   id: string;
   customerId?: string; // Link to customer (optional, for cash sales)
   items: SaleTransactionItem[];
-  totalAmount: number; // Total amount *after* discount
-  originalTotalAmount?: number; // Total amount *before* discount (optional for reporting)
+  totalAmount: number; // Total amount *after* product discount AND insurance discount
+  originalTotalAmount?: number; // Total amount *before* any discounts (optional for reporting)
+  subTotalAmount?: number; // Total amount *after* product discounts but *before* insurance discount (optional)
   paymentMethod: PaymentMethod; // cash, card, debt
   amountPaid: number; // Amount paid by customer
   date: Date;
+  appliedInsuranceDiscountRate?: number; // Record the insurance rate applied to this specific sale
 }
 
 // Type for items within a purchase transaction

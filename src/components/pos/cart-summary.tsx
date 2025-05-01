@@ -4,7 +4,7 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { ShoppingCart, CreditCard, Trash2, Loader2, Printer, BadgePercent, User, Coins, Landmark } from 'lucide-react'; // Added User, Coins, Landmark
+import { ShoppingCart, CreditCard, Trash2, Loader2, Printer, BadgePercent, User, Coins, Landmark, ShieldCheck } from 'lucide-react'; // Added ShieldCheck
 import { useCart } from '@/hooks/use-cart';
 import { CartItem } from './cart-item';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -19,10 +19,12 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { addSale, getProductById, getCustomers } from '@/lib/data'; // Use simplified imports, add getCustomers
+import { addSale, getProductById, getCustomers, getCustomerById } from '@/lib/data'; // Use simplified imports, add getCustomers, getCustomerById
 import type { SaleTransaction, SaleTransactionItem, Product, Customer, PaymentMethod } from '@/lib/types'; // Import Customer type
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // Import Select
 import { Label } from '@/components/ui/label'; // Import Label
+import { Input } from '@/components/ui/input'; // Import Input
+import { cn } from '@/lib/utils'; // Import cn
 
 // Helper to apply discount - copied for local use if needed, but ideally imported
 const applyDiscount = (price: number, discountRate?: number): number => {
@@ -50,6 +52,7 @@ export function CartSummary() {
   const [productDetailsMap, setProductDetailsMap] = React.useState<Map<string, Product>>(new Map());
   const [customers, setCustomers] = React.useState<Customer[]>([]); // State for customers
   const [selectedCustomerId, setSelectedCustomerId] = React.useState<string | undefined>(undefined); // State for selected customer
+  const [selectedCustomer, setSelectedCustomer] = React.useState<Customer | null>(null); // Store full customer object
   const [selectedPaymentMethod, setSelectedPaymentMethod] = React.useState<PaymentMethod>('cash'); // Default to cash
   const [amountPaid, setAmountPaid] = React.useState<number>(0); // State for amount paid
 
@@ -70,10 +73,36 @@ export function CartSummary() {
   }, [toast]); // Add toast dependency
 
 
-  // Reset amountPaid when total price changes
-  React.useEffect(() => {
-      setAmountPaid(getTotalPrice());
-  }, [items, getTotalPrice]);
+    // Fetch full customer details when ID changes
+    React.useEffect(() => {
+        const fetchCustomerDetails = async () => {
+            if (selectedCustomerId && selectedCustomerId !== 'undefined') {
+                 try {
+                    const customer = await getCustomerById(selectedCustomerId);
+                    setSelectedCustomer(customer || null);
+                } catch (error) {
+                    console.error("Failed to fetch customer details:", error);
+                    toast({ title: "خطأ", description: "فشل تحميل بيانات العميل.", variant: "destructive" });
+                    setSelectedCustomer(null); // Reset on error
+                }
+            } else {
+                setSelectedCustomer(null); // Reset if "Cash Customer" is selected
+            }
+        };
+        fetchCustomerDetails();
+    }, [selectedCustomerId, toast]);
+
+
+  // Reset amountPaid when total price changes or customer/insurance changes
+  const subTotalPrice = getTotalPrice(); // Price after product discounts
+  const insuranceDiscountRate = selectedCustomer?.insuranceDiscountRate ?? 0;
+  const insuranceDiscountAmount = subTotalPrice * (insuranceDiscountRate / 100);
+  const finalTotalPrice = subTotalPrice - insuranceDiscountAmount; // Final price after product AND insurance discounts
+
+   React.useEffect(() => {
+      setAmountPaid(finalTotalPrice);
+   }, [items, finalTotalPrice]); // Dependency includes finalTotalPrice
+
 
   // Pre-fetch product details for items in the cart
   React.useEffect(() => {
@@ -114,10 +143,11 @@ export function CartSummary() {
     }
 
     let itemRowsHtml = '';
-    let totalOriginalAmount = 0;
+    let calculatedOriginalTotal = 0;
+    let calculatedSubTotal = 0; // Total after product discount
      // Lookup customer name
-    const customer = customers.find(c => c.id === saleToPrint.customerId);
-    const customerName = customer ? customer.name : 'عميل نقدي';
+    const customerForPrint = saleToPrint.customerId ? await getCustomerById(saleToPrint.customerId) : null;
+    const customerName = customerForPrint ? customerForPrint.name : 'عميل نقدي';
     const paymentInfo = paymentMethods.find(p => p.value === saleToPrint.paymentMethod) || { text: saleToPrint.paymentMethod };
 
     for (const item of saleToPrint.items) {
@@ -144,7 +174,9 @@ export function CartSummary() {
              : (product ? product.price : item.price / (1 - (product?.discountRate || 0)/100) ); // Estimate original if needed
 
         const originalItemTotal = originalUnitPrice * item.quantity;
-        totalOriginalAmount += originalItemTotal;
+        calculatedOriginalTotal += originalItemTotal;
+        calculatedSubTotal += item.price * item.quantity; // item.price is after product discount
+
         const hasDiscount = item.price !== originalUnitPrice;
 
         itemRowsHtml += `
@@ -158,8 +190,15 @@ export function CartSummary() {
          `;
      }
 
-    const totalDiscount = (saleToPrint.originalTotalAmount ?? totalOriginalAmount) - saleToPrint.totalAmount;
-    const remainingAmount = saleToPrint.totalAmount - saleToPrint.amountPaid;
+     // Use stored values if available, otherwise use calculated ones
+     const printOriginalTotal = saleToPrint.originalTotalAmount ?? calculatedOriginalTotal;
+     const printSubTotal = saleToPrint.subTotalAmount ?? calculatedSubTotal;
+     const printInsuranceDiscount = printSubTotal * ((saleToPrint.appliedInsuranceDiscountRate ?? 0) / 100);
+     const printFinalTotal = saleToPrint.totalAmount; // Should be correct from the sale record
+     const printTotalProductDiscount = printOriginalTotal - printSubTotal;
+
+
+    const remainingAmount = printFinalTotal - saleToPrint.amountPaid;
 
     printWindow.document.write(`
      <html>
@@ -172,13 +211,14 @@ export function CartSummary() {
              th, td { border: 1px solid #ddd; padding: 6px; text-align: right; }
              th { background-color: #f2f2f2; font-weight: bold; }
              .totals { margin-top: 15px; text-align: left; font-size: 1.0em; line-height: 1.5; }
-             .totals span { display: inline-block; min-width: 100px; }
+             .totals span { display: inline-block; min-width: 120px; /* Adjusted width */ }
              .totals strong { font-weight: bold; font-size: 1.1em; }
              .header { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; text-align: center;}
              .header h2 { margin: 0; font-size: 1.5em; }
               .info { margin-bottom: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px 15px; }
              .info p { margin: 3px 0; }
               .payment-method { font-weight: bold; }
+              .discount { color: green; }
              @media print {
                  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                  button { display: none; }
@@ -195,6 +235,7 @@ export function CartSummary() {
              <p><strong>التاريخ:</strong> ${new Date(saleToPrint.date).toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short'})}</p>
              <p><strong>العميل:</strong> ${customerName}</p>
              <p><strong>طريقة الدفع:</strong> <span class="payment-method">${paymentInfo.label || paymentInfo.value}</span></p>
+             ${customerForPrint?.insuranceCompany ? `<p><strong>شركة التأمين:</strong> ${customerForPrint.insuranceCompany} (#${customerForPrint.policyNumber})</p>` : ''}
          </div>
          <table>
              <thead>
@@ -211,11 +252,14 @@ export function CartSummary() {
              </tbody>
          </table>
           <div class="totals">
-             <div><span>الإجمالي الأصلي:</span> ${(saleToPrint.originalTotalAmount ?? totalOriginalAmount).toFixed(2)} ر.س</div>
-             ${totalDiscount > 0 ? `<div><span>الخصم:</span> ${totalDiscount.toFixed(2)} ر.س</div>` : ''}
+             <div><span>الإجمالي الأصلي:</span> ${printOriginalTotal.toFixed(2)} ر.س</div>
+             ${printTotalProductDiscount > 0 ? `<div><span class="discount">خصم الأصناف:</span> <span class="discount">- ${printTotalProductDiscount.toFixed(2)} ر.س</span></div>` : ''}
+             ${printInsuranceDiscount > 0 ? `<div><span class="discount">خصم التأمين (${saleToPrint.appliedInsuranceDiscountRate}%):</span> <span class="discount">- ${printInsuranceDiscount.toFixed(2)} ر.س</span></div>` : ''}
+             <hr style="border: none; border-top: 1px dashed #ccc; margin: 5px 0;">
              <div><span>المبلغ المدفوع:</span> ${saleToPrint.amountPaid.toFixed(2)} ر.س</div>
              ${remainingAmount > 0 && saleToPrint.paymentMethod === 'debt' ? `<div><span>المبلغ المتبقي (آجل):</span> ${remainingAmount.toFixed(2)} ر.س</div>` : ''}
-             <div><strong>الإجمالي النهائي:</strong> <strong>${saleToPrint.totalAmount.toFixed(2)} ر.س</strong></div>
+              ${remainingAmount < 0 ? `<div><span>المبلغ المرجع:</span> ${Math.abs(remainingAmount).toFixed(2)} ر.س</div>` : ''}
+             <div><strong>الإجمالي النهائي:</strong> <strong>${printFinalTotal.toFixed(2)} ر.س</strong></div>
          </div>
           <button onclick="window.print()">طباعة</button>
           <button onclick="window.close()">إغلاق</button>
@@ -242,8 +286,9 @@ export function CartSummary() {
          toast({ title: "مبلغ غير صحيح", description: "المبلغ المدفوع لا يمكن أن يكون سالباً.", variant: "destructive"});
          return;
      }
-      if (selectedPaymentMethod !== 'debt' && amountPaid < getTotalPrice()) {
-         toast({ title: "مبلغ غير كاف", description: "المبلغ المدفوع أقل من الإجمالي المطلوب لطرق الدفع غير الآجلة.", variant: "destructive"});
+     // For non-debt, amount paid must cover the final total
+      if (selectedPaymentMethod !== 'debt' && amountPaid < finalTotalPrice) {
+         toast({ title: "مبلغ غير كاف", description: `المبلغ المدفوع (${amountPaid.toFixed(2)}) أقل من الإجمالي المطلوب (${finalTotalPrice.toFixed(2)}).`, variant: "destructive"});
          return;
      }
 
@@ -256,18 +301,20 @@ export function CartSummary() {
       const saleItems: SaleTransactionItem[] = items.map(item => ({
         productId: item.id,
         quantity: item.cartQuantity,
-        price: item.pricePerSelectedUnit, // This is the already discounted price
+        price: item.pricePerSelectedUnit, // This is the already discounted price (product discount)
         soldUnitType: item.selectedUnitType
       }));
 
       const saleData: Omit<SaleTransaction, 'id'> = {
-        customerId: selectedCustomerId, // Include selected customer ID
+        customerId: selectedCustomerId && selectedCustomerId !== 'undefined' ? selectedCustomerId : undefined, // Handle 'undefined' string
         items: saleItems,
-        totalAmount: getTotalPrice(), // Use the total price after discount
-        originalTotalAmount: getOriginalTotalPrice(), // Store original total
+        totalAmount: finalTotalPrice, // Final amount after product and insurance discounts
+        originalTotalAmount: getOriginalTotalPrice(), // Total before any discounts
+        subTotalAmount: subTotalPrice, // Total after product discounts
         paymentMethod: selectedPaymentMethod, // Include selected payment method
         amountPaid: amountPaid, // Include amount paid
         date: new Date(),
+        appliedInsuranceDiscountRate: insuranceDiscountRate, // Record the insurance rate used
       };
 
       // Save the sale transaction (which also updates stock and customer balance)
@@ -276,6 +323,7 @@ export function CartSummary() {
 
       clearCart();
       setSelectedCustomerId(undefined); // Reset customer selection
+      setSelectedCustomer(null);
       setSelectedPaymentMethod('cash'); // Reset payment method
       setAmountPaid(0); // Reset amount paid
 
@@ -305,6 +353,7 @@ export function CartSummary() {
     const handleClearCart = () => {
     clearCart();
     setSelectedCustomerId(undefined); // Reset customer
+    setSelectedCustomer(null);
     setSelectedPaymentMethod('cash'); // Reset payment method
     setAmountPaid(0); // Reset amount paid
     toast({
@@ -327,9 +376,8 @@ export function CartSummary() {
   }
 
   const itemCount = getItemCount();
-  const finalTotalPrice = getTotalPrice(); // Price after discount
-  const originalTotalPrice = getOriginalTotalPrice(); // Price before discount
-  const totalDiscount = originalTotalPrice - finalTotalPrice;
+  const originalTotalPrice = getOriginalTotalPrice(); // Price before any discount
+  const totalProductDiscount = originalTotalPrice - subTotalPrice;
   const remainingAmount = finalTotalPrice - amountPaid;
 
 
@@ -344,10 +392,11 @@ export function CartSummary() {
               className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center rounded-full text-xs"
               style={{ lineHeight: '1' }}
             >
-              {itemCount}
+              {/* We show item count (lines) not total pieces */}
+              {items.length}
             </Badge>
           )}
-          <span className="sr-only">سلة المشتريات ({itemCount})</span>
+          <span className="sr-only">سلة المشتريات ({items.length})</span>
         </Button>
       </SheetTrigger>
       <SheetContent className="flex flex-col w-full sm:max-w-md">
@@ -383,11 +432,19 @@ export function CartSummary() {
                             <SelectItem value="undefined">عميل نقدي (افتراضي)</SelectItem> {/* Represent no selection */}
                             {customers.map((customer) => (
                                 <SelectItem key={customer.id} value={customer.id}>
-                                    {customer.name} {customer.phone ? `(${customer.phone})` : ''}
+                                     {customer.name} {customer.phone ? `(${customer.phone})` : ''}
+                                      {customer.insuranceCompany && <Badge variant="secondary" className="mr-2 text-xs px-1 py-0">{customer.insuranceCompany}</Badge>}
                                 </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
+                     {/* Display Insurance Info if customer selected */}
+                    {selectedCustomer?.insuranceCompany && (
+                        <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1">
+                             <ShieldCheck className="h-3 w-3 text-blue-600"/>
+                             <span>{selectedCustomer.insuranceCompany} (#{selectedCustomer.policyNumber}) - خصم {selectedCustomer.insuranceDiscountRate || 0}%</span>
+                        </div>
+                    )}
                 </div>
 
                  {/* Payment Method Selection */}
@@ -399,7 +456,7 @@ export function CartSummary() {
                         </SelectTrigger>
                         <SelectContent>
                             {paymentMethods.map((method) => (
-                                <SelectItem key={method.value} value={method.value}>
+                                <SelectItem key={method.value} value={method.value} disabled={method.value === 'debt' && !selectedCustomerId}>
                                     <div className="flex items-center gap-2">
                                         <method.icon className="h-4 w-4 text-muted-foreground"/>
                                         {method.label}
@@ -431,15 +488,26 @@ export function CartSummary() {
                         <span>الإجمالي الأصلي:</span>
                         <span>{originalTotalPrice.toFixed(2)} ر.س</span>
                     </div>
-                    {totalDiscount > 0 && (
+                    {totalProductDiscount > 0 && (
                         <div className="flex justify-between text-green-600">
-                             <span>الخصم:</span>
-                            <span>- {totalDiscount.toFixed(2)} ر.س</span>
+                             <span>خصم الأصناف:</span>
+                            <span>- {totalProductDiscount.toFixed(2)} ر.س</span>
                          </div>
                     )}
                     <Separator className="my-1"/>
-                    <div className="flex justify-between items-center font-semibold text-base">
-                        <span>الإجمالي بعد الخصم:</span>
+                    <div className="flex justify-between font-semibold">
+                        <span>المجموع بعد الخصم:</span>
+                        <span>{subTotalPrice.toFixed(2)} ر.س</span>
+                    </div>
+                     {insuranceDiscountAmount > 0 && (
+                        <div className="flex justify-between text-blue-600">
+                             <span>خصم التأمين ({insuranceDiscountRate}%):</span>
+                             <span>- {insuranceDiscountAmount.toFixed(2)} ر.س</span>
+                         </div>
+                    )}
+                    <Separator className="my-1"/>
+                    <div className="flex justify-between items-center font-bold text-base">
+                        <span>الإجمالي النهائي:</span>
                         <span>{finalTotalPrice.toFixed(2)} ر.س</span>
                     </div>
                       {/* Show Remaining Amount only if applicable */}

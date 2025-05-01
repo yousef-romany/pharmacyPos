@@ -13,9 +13,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { Receipt, Printer, Eye, CreditCard, Coins, Landmark } from 'lucide-react'; // Added icons for payment methods
+import { Receipt, Printer, Eye, CreditCard, Coins, Landmark, ShieldCheck } from 'lucide-react'; // Added icons for payment methods & insurance
 import type { SaleTransaction, SaleTransactionItem, Customer, PaymentMethod } from '@/lib/types'; // Import the type and Customer
-import { getSales, getCustomers, getProductById } from '@/lib/data'; // Import data fetching functions (getProductById needed for details)
+import { getSales, getCustomers, getProductById, getCustomerById } from '@/lib/data'; // Import data fetching functions (getProductById needed for details)
 import {
   Dialog,
   DialogContent,
@@ -62,6 +62,7 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
      const [detailedItems, setDetailedItems] = React.useState<SaleItemWithDetails[]>([]);
      const [isLoadingDetails, setIsLoadingDetails] = React.useState(false);
       const [localOriginalTotal, setLocalOriginalTotal] = React.useState<number>(0);
+      const [localSubTotal, setLocalSubTotal] = React.useState<number>(0); // Total after product discount
 
 
     React.useEffect(() => {
@@ -69,6 +70,7 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
             if (!sale) return;
             setIsLoadingDetails(true);
             let calculatedOriginalTotal = 0;
+            let calculatedSubTotal = 0;
             try {
                 const itemsWithDetails = await Promise.all(sale.items.map(async (item) => {
                      const product = await getProductById(item.productId); // Get full product info
@@ -83,6 +85,7 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                         : product.price) : item.price / (1 - (product?.discountRate ?? 0) / 100); // Estimate if product missing
 
                      calculatedOriginalTotal += originalUnitPrice * item.quantity;
+                     calculatedSubTotal += item.price * item.quantity; // item.price is after product discount
 
                     return {
                         ...item,
@@ -94,6 +97,7 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                 setDetailedItems(itemsWithDetails);
                  // Use the pre-calculated originalTotalAmount if available, otherwise use the dynamically calculated one
                  setLocalOriginalTotal(sale.originalTotalAmount ?? calculatedOriginalTotal);
+                 setLocalSubTotal(sale.subTotalAmount ?? calculatedSubTotal); // Use stored subtotal if available
             } catch (error) {
                 console.error("Failed to fetch sale item details:", error);
                  // Handle error (e.g., show toast)
@@ -108,6 +112,7 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
             setDetailedItems([]);
             setIsLoadingDetails(false);
             setLocalOriginalTotal(0);
+            setLocalSubTotal(0);
         }
     }, [sale]); // Re-fetch when sale changes
 
@@ -115,7 +120,9 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
     if (!sale) return null;
 
     const paymentInfo = getPaymentMethodInfo(sale.paymentMethod);
-     const totalDiscount = localOriginalTotal - sale.totalAmount;
+     const totalProductDiscount = localOriginalTotal - localSubTotal;
+     const insuranceDiscountAmount = localSubTotal * ((sale.appliedInsuranceDiscountRate ?? 0) / 100);
+     const totalDiscount = totalProductDiscount + insuranceDiscountAmount;
 
 
     // Basic print function (opens print dialog for the content)
@@ -124,7 +131,7 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
         if (printContent) {
              const printWindow = window.open('', '_blank');
              if (printWindow) {
-                 // Fetch item details again specifically for printing to ensure accuracy
+                 // Use the detailedItems and totals already calculated for the dialog
                  let itemsHtmlForPrint = '';
                  if (isLoadingDetails) {
                      itemsHtmlForPrint = '<tr><td colspan="5">جاري تحميل تفاصيل الأصناف...</td></tr>';
@@ -155,13 +162,14 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                          th, td { border: 1px solid #ddd; padding: 6px; text-align: right; }
                          th { background-color: #f2f2f2; font-weight: bold; }
                           .totals { margin-top: 15px; text-align: left; font-size: 1.0em; line-height: 1.5; }
-                         .totals span { display: inline-block; min-width: 100px; }
+                          .totals span { display: inline-block; min-width: 120px; /* Adjusted */ }
                          .totals strong { font-weight: bold; font-size: 1.1em; }
                          .header { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; text-align: center;}
                          .header h2 { margin: 0; font-size: 1.5em; }
                           .info { margin-bottom: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px 15px; }
                          .info p { margin: 3px 0; }
                          .payment-method { font-weight: bold; }
+                         .discount { color: green; }
                           @media print {
                               body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                               button { display: none; }
@@ -178,6 +186,7 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                          <p><strong>التاريخ:</strong> ${new Date(sale.date).toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short'})}</p>
                          <p><strong>العميل:</strong> ${customerName || 'عميل نقدي'}</p>
                          <p><strong>طريقة الدفع:</strong> <span class="payment-method">${paymentInfo.text}</span></p>
+                         ${sale.appliedInsuranceDiscountRate && sale.appliedInsuranceDiscountRate > 0 ? `<p><strong>خصم التأمين المطبق:</strong> ${sale.appliedInsuranceDiscountRate}%</p>` : ''}
                      </div>
                      <table>
                          <thead>
@@ -195,9 +204,12 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                      </table>
                       <div class="totals">
                          <div><span>الإجمالي الأصلي:</span> ${localOriginalTotal.toFixed(2)} ر.س</div>
-                         ${totalDiscount > 0 ? `<div><span>الخصم:</span> ${totalDiscount.toFixed(2)} ر.س</div>` : ''}
+                         ${totalProductDiscount > 0 ? `<div><span class="discount">خصم الأصناف:</span> <span class="discount">- ${totalProductDiscount.toFixed(2)} ر.س</span></div>` : ''}
+                         ${insuranceDiscountAmount > 0 ? `<div><span class="discount">خصم التأمين (${sale.appliedInsuranceDiscountRate}%):</span> <span class="discount">- ${insuranceDiscountAmount.toFixed(2)} ر.س</span></div>` : ''}
+                          <hr style="border: none; border-top: 1px dashed #ccc; margin: 5px 0;">
                          <div><span>المبلغ المدفوع:</span> ${sale.amountPaid.toFixed(2)} ر.س</div>
                           ${remainingAmount > 0 && sale.paymentMethod === 'debt' ? `<div><span>المبلغ المتبقي (آجل):</span> ${remainingAmount.toFixed(2)} ر.س</div>` : ''}
+                           ${remainingAmount < 0 ? `<div><span>المبلغ المرجع:</span> ${Math.abs(remainingAmount).toFixed(2)} ر.س</div>` : ''}
                          <div><strong>الإجمالي النهائي:</strong> <strong>${sale.totalAmount.toFixed(2)} ر.س</strong></div>
                      </div>
                       <button onclick="window.print()">طباعة</button>
@@ -228,7 +240,14 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                              {paymentInfo.text}
                          </Badge>
                      </p>
-                     {/* Add any other relevant header info */}
+                     {sale.appliedInsuranceDiscountRate && sale.appliedInsuranceDiscountRate > 0 && (
+                         <p className='flex items-center'><strong className="ml-1">خصم التأمين:</strong>
+                            <Badge variant="secondary" className="mr-1 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                                 <ShieldCheck className="ml-1 h-3 w-3" />
+                                 {sale.appliedInsuranceDiscountRate}%
+                             </Badge>
+                         </p>
+                     )}
                 </div>
                 <Separator />
                 <h4 className="font-medium">الأصناف:</h4>
@@ -274,10 +293,16 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                       <span>الإجمالي الأصلي:</span>
                       <span className="font-semibold">{localOriginalTotal.toFixed(2)} ر.س</span>
 
-                      {totalDiscount > 0 && (
+                      {totalProductDiscount > 0 && (
                           <>
-                             <span>الخصم:</span>
-                             <span className="font-semibold text-green-600">-{totalDiscount.toFixed(2)} ر.س</span>
+                             <span>خصم الأصناف:</span>
+                             <span className="font-semibold text-green-600">-{totalProductDiscount.toFixed(2)} ر.س</span>
+                          </>
+                      )}
+                       {insuranceDiscountAmount > 0 && (
+                          <>
+                             <span>خصم التأمين:</span>
+                             <span className="font-semibold text-blue-600">-{insuranceDiscountAmount.toFixed(2)} ر.س</span>
                           </>
                       )}
 
@@ -288,6 +313,12 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                            <>
                              <span>المبلغ المتبقي (آجل):</span>
                              <span className="font-semibold text-red-600">{(sale.totalAmount - sale.amountPaid).toFixed(2)} ر.س</span>
+                           </>
+                       )}
+                       {(sale.totalAmount - sale.amountPaid) < 0 && (
+                           <>
+                             <span>المبلغ المرجع:</span>
+                             <span className="font-semibold text-green-700">{Math.abs(sale.totalAmount - sale.amountPaid).toFixed(2)} ر.س</span>
                            </>
                        )}
 

@@ -30,7 +30,7 @@ import {
   LogOut,
   Pill, // For Products
   LineChart, // For Reports
-  User, // For Customers (replaced Users)
+  User as UserIcon, // Renamed User to UserIcon to avoid conflict
   Building2, // For Suppliers (replaced Building)
   HandCoins, // For Sales (replaced Receipt)
   Gauge, // For Dashboard (replaced Home)
@@ -48,8 +48,9 @@ const mainNavItems = [
   { href: '/products', icon: Pill, label: 'الأصناف' },
   { href: '/purchases', icon: Truck, label: 'المشتريات' },
   { href: '/suppliers', icon: Building2, label: 'الموردين' },
-  { href: '/customers', icon: User, label: 'العملاء' },
+  { href: '/customers', icon: UserIcon, label: 'العملاء' }, // Use renamed UserIcon
   { href: '/sales', icon: HandCoins, label: 'فواتير البيع' },
+  { href: '/inventory', icon: Archive, label: 'المخزون' }, // Add Inventory link here
 ];
 
 // Reports Navigation Items (for Accordion)
@@ -64,6 +65,8 @@ const reportNavItems = [
 
 const settingsNavItems = [
     { href: '/settings', icon: Settings, label: 'الإعدادات' },
+    { href: '/users', icon: Users, label: 'المستخدمين' }, // Add Users link
+    { href: '/treasury', icon: Landmark, label: 'الخزنة' }, // Add Treasury link
     // Add logout functionality later
     // { href: '/logout', icon: LogOut, label: 'تسجيل الخروج' },
 ];
@@ -86,7 +89,10 @@ export default function DashboardLayout({
   React.useEffect(() => {
     // Update cart count only on the client after hydration
     if (isClient) {
-      setCartItemCount(getItemCount());
+      // Use a function that doesn't depend on the cart hook directly if possible
+      // or ensure the cart hook itself is hydration-safe
+       const count = getItemCount(); // Assuming getItemCount() is safe or handled
+       setCartItemCount(count);
     }
   }, [isClient, getItemCount, pathname]); // Update when pathname changes too, in case cart updates outside layout
 
@@ -97,7 +103,7 @@ export default function DashboardLayout({
           <SidebarHeader className="p-4 items-center">
             <div className="flex items-center gap-2 flex-grow">
               <Package className="w-7 h-7 text-primary" />
-              <h1 className="text-lg font-semibold text-primary whitespace-nowrap group-data-[state=collapsed]:group-data-[collapsible=icon]:hidden"> {/* Use state for hiding */}
+              <h1 className="text-lg font-semibold text-primary whitespace-nowrap group-data-[state=expanded]:group-data-[collapsible=icon]:block group-data-[state=collapsed]:group-data-[collapsible=icon]:hidden"> {/* Use state for hiding */}
                 صيدليتي
               </h1>
             </div>
@@ -124,7 +130,7 @@ export default function DashboardLayout({
                       {item.badge && isClient && cartItemCount > 0 && (
                          <Badge
                           variant="destructive"
-                          className="absolute top-1 left-1 h-5 w-5 p-0 flex items-center justify-center rounded-full text-xs group-data-[state=collapsed]:group-data-[collapsible=icon]:hidden" // Use state for hiding
+                          className="absolute top-1 left-1 h-5 w-5 p-0 flex items-center justify-center rounded-full text-xs group-data-[state=expanded]:group-data-[collapsible=icon]:block group-data-[state=collapsed]:group-data-[collapsible=icon]:hidden" // Use state for hiding
                            style={{ lineHeight: '1' }}
                         >
                           {cartItemCount}
@@ -136,7 +142,7 @@ export default function DashboardLayout({
               ))}
 
                {/* Reports Accordion */}
-               <SidebarMenuItem className="group-data-[state=collapsed]:group-data-[collapsible=icon]:hidden"> {/* Hide accordion header when collapsed */}
+               <SidebarMenuItem className="group-data-[state=expanded]:group-data-[collapsible=icon]:block group-data-[state=collapsed]:group-data-[collapsible=icon]:hidden"> {/* Hide accordion header when collapsed */}
                   <Accordion type="single" collapsible className="w-full">
                       <AccordionItem value="reports" className="border-b-0">
                           <AccordionTrigger className={cn(
@@ -172,7 +178,7 @@ export default function DashboardLayout({
                   </Accordion>
                </SidebarMenuItem>
                 {/* Tooltip for Reports when collapsed */}
-                <SidebarMenuItem className="group-data-[state=expanded]:hidden"> {/* Show only when collapsed */}
+                <SidebarMenuItem className="group-data-[state=expanded]:hidden group-data-[state=collapsed]:group-data-[collapsible=icon]:block hidden"> {/* Show only when collapsed */}
                     <SidebarMenuButton
                         className="justify-center"
                         tooltip="التقارير"
@@ -227,4 +233,3 @@ export default function DashboardLayout({
     </SidebarProvider>
   );
 }
-

@@ -45,13 +45,36 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity, Barcode, Boxes, Percent, Calendar, AlertCircle, BadgePercent, Building, Beaker } from 'lucide-react'; // Added Building, Beaker
+import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity, Barcode, Boxes, Percent, Calendar, AlertCircle, BadgePercent, Building, Beaker, FlaskConical } from 'lucide-react'; // Added FlaskConical for active ingredient
 import type { Product } from '@/lib/types';
 import { getProducts, addProduct, updateProduct, deleteProduct, calculateDaysUntilExpiry } from '@/lib/data'; // Import CRUD functions and expiry helper
 import { DatePicker } from '@/components/ui/date-picker'; // Import DatePicker
 import { format } from 'date-fns'; // Import format function
 import { arSA } from 'date-fns/locale'; // Import Arabic locale
 import { cn } from '@/lib/utils'; // Import cn for conditional classes
+import { Separator } from '@/components/ui/separator'; // Import Separator
+
+// Helper function to get icon component name (adjust if needed)
+function getIconName(IconComponent?: React.ComponentType<any>): string | undefined {
+    if (!IconComponent) return undefined;
+    // Example: Check specific components
+    if (IconComponent === Pill) return 'Pill';
+    if (IconComponent === Baby) return 'Baby';
+    if (IconComponent === SprayCan) return 'SprayCan';
+    if (IconComponent === Activity) return 'Activity';
+    // Add other mappings if necessary
+    return IconComponent.displayName || IconComponent.name || undefined; // Fallback using component name/displayName
+}
+// Helper function to get icon component from name (adjust if needed)
+function getIconComponent(name?: string): React.ComponentType<any> | undefined {
+    switch (name) {
+        case 'Pill': return Pill;
+        case 'Baby': return Baby;
+        case 'SprayCan': return SprayCan;
+        case 'Activity': return Activity;
+        default: return Pill; // Default or handle unknown case
+    }
+}
 
 // --- Product Form ---
 interface ProductFormProps {
@@ -66,6 +89,7 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
     nameEn: initialData?.nameEn || '',
     manufacturer: initialData?.manufacturer || '', // Added
     concentration: initialData?.concentration || '', // Added
+    activeIngredient: initialData?.activeIngredient || '', // Added
     price: initialData?.price || 0,
     quantity: initialData?.quantity || 0,
     barcode: initialData?.barcode || '',
@@ -142,23 +166,7 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
     }
   };
 
-  // Helper functions for icons (remain the same)
-   function getIconName(IconComponent?: React.ComponentType<any>): string | undefined {
-    if (IconComponent === Pill) return 'Pill';
-    if (IconComponent === Baby) return 'Baby';
-    if (IconComponent === SprayCan) return 'SprayCan';
-    if (IconComponent === Activity) return 'Activity';
-    return undefined;
-  }
-    function getIconComponent(name?: string): React.ComponentType<any> | undefined {
-    switch (name) {
-      case 'Pill': return Pill;
-      case 'Baby': return Baby;
-      case 'SprayCan': return SprayCan;
-      case 'Activity': return Activity;
-      default: return Pill;
-    }
-  }
+
     const categoryIcons = [
       { name: 'Pill', label: 'أقراص/حبوب', Icon: Pill },
       { name: 'Baby', label: 'مستلزمات أطفال', Icon: Baby },
@@ -186,6 +194,10 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
           <div>
              <Label htmlFor="concentration">التركيز</Label>
              <Input id="concentration" name="concentration" value={formData.concentration || ''} onChange={handleChange} />
+          </div>
+           <div>
+             <Label htmlFor="activeIngredient">المادة الفعالة</Label>
+             <Input id="activeIngredient" name="activeIngredient" value={formData.activeIngredient || ''} onChange={handleChange} placeholder="مثل: باراسيتامول" />
           </div>
           <div>
             <Label htmlFor="barcode">الباركود</Label>
@@ -347,7 +359,11 @@ export default function ProductsPage() {
       header: "",
       cell: ({ row }) => {
           const Icon = row.original.categoryIcon || Package;
-          return <Icon className="w-5 h-5 text-muted-foreground mx-auto" />;
+          // Handle case where Icon might be a Lucide icon directly
+          if (typeof Icon === 'function') {
+             return <Icon className="w-5 h-5 text-muted-foreground mx-auto" />;
+          }
+          return <Package className="w-5 h-5 text-muted-foreground mx-auto" />; // Fallback
       },
        enableSorting: false,
        enableHiding: false,
@@ -360,11 +376,17 @@ export default function ProductsPage() {
            <div className="flex flex-col">
                <span className="font-medium">{row.original.nameAr}</span>
                <span className="text-xs text-muted-foreground">{row.original.nameEn}</span>
-               {row.original.concentration && <span className="text-xs text-muted-foreground/80">{row.original.concentration}</span>} {/* Show concentration */}
+               {row.original.concentration && <span className="text-xs text-muted-foreground/80">{row.original.concentration}</span>}
            </div>
        ),
       size: 220, // Increased size for more info
     },
+     {
+        accessorKey: "activeIngredient", // Added Active Ingredient column
+        header: "المادة الفعالة",
+        cell: ({ row }) => row.original.activeIngredient || '-',
+        size: 140,
+     },
      {
         accessorKey: "manufacturer", // Added Manufacturer column
         header: "الشركة",
@@ -537,6 +559,14 @@ export default function ProductsPage() {
                     }
                     className="max-w-xs"
                  />
+                 <Input
+                    placeholder="ابحث بالمادة الفعالة..."
+                    value={(table.getColumn("activeIngredient")?.getFilterValue() as string) ?? ""}
+                    onChange={(event) =>
+                        table.getColumn("activeIngredient")?.setFilterValue(event.target.value)
+                    }
+                    className="max-w-xs"
+                 />
                   <Input
                     placeholder="ابحث بالباركود..."
                     value={(table.getColumn("barcode")?.getFilterValue() as string) ?? ""}
@@ -592,7 +622,7 @@ export default function ProductsPage() {
                     ) : (
                       <TableRow>
                         <TableCell colSpan={columns.length} className="h-24 text-center">
-                          لا توجد منتجات لعرضها.
+                          لا يوجد منتجات لعرضها.
                         </TableCell>
                       </TableRow>
                     )}
