@@ -163,8 +163,8 @@ export default function DashboardOverviewPage() {
           totalSales: { label: "إجمالي المبيعات (ر.س)" } // Ensure totalSales label exists
       } as ChartConfig;
    }, [categorySalesData]); // Depend on categorySalesData
-
    // Ensure syntax is correct before the return statement
+
    return (
      <div className="p-4 md:p-6 space-y-6">
        <h2 className="text-2xl font-semibold">لوحة التحكم الرئيسية</h2>
@@ -285,4 +285,3 @@ export default function DashboardOverviewPage() {
      </div>
    );
  }
-    
