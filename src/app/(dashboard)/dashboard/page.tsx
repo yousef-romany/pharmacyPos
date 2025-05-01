@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -154,17 +155,18 @@ export default function DashboardOverviewPage() {
   }, []); // End of useEffect
 
    // Define chartConfig within the component scope, after state hooks
-   const chartConfig = React.useMemo(() => {
-      return {
-         ...categorySalesData.reduce((acc, cur) => {
-           acc[cur.name] = { label: cur.label, color: cur.fill };
-           return acc;
-         }, {} as Record<string, { label: string; color: string }>),
-          totalSales: { label: "إجمالي المبيعات (ر.س)" } // Ensure totalSales label exists
-      } as ChartConfig;
+    const chartConfig = React.useMemo(() => {
+      // Build the config object iteratively
+      const config: ChartConfig = {
+          totalSales: { label: "إجمالي المبيعات (ر.س)" } // Start with the base config
+      };
+      categorySalesData.forEach(cur => {
+          config[cur.name] = { label: cur.label, color: cur.fill };
+      });
+      return config;
    }, [categorySalesData]); // End of useMemo
 
-   // Ensure syntax is correct before the return statement
+   // Removed comment before return statement to fix parsing error
    return (
      <div className="p-4 md:p-6 space-y-6">
        <h2 className="text-2xl font-semibold">لوحة التحكم الرئيسية</h2>
@@ -285,3 +287,4 @@ export default function DashboardOverviewPage() {
    </div>
  );
 }
+
