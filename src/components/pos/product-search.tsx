@@ -7,7 +7,7 @@ import { Search, Barcode } from 'lucide-react'; // Import Barcode icon
 
 interface ProductSearchProps {
   onSearch: (term: string) => void;
-  onBarcodeScan: (barcode: string) => void; // New prop for barcode handling
+  onBarcodeScan: (barcode: string) => void; // Callback for barcode handling
 }
 
 export function ProductSearch({ onSearch, onBarcodeScan }: ProductSearchProps) {
@@ -30,11 +30,21 @@ export function ProductSearch({ onSearch, onBarcodeScan }: ProductSearchProps) {
 
    const handleBarcodeKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
      if (event.key === 'Enter' && barcodeTerm.trim()) {
+         event.preventDefault(); // Prevent default form submission if inside a form
          onBarcodeScan(barcodeTerm.trim());
          setBarcodeTerm(''); // Clear after scan
-         // Optional: Keep focus? barcodeInputRef.current?.focus();
      }
    };
+
+    const handleBarcodeBlur = () => {
+        // Scan on blur if input is not empty
+        if (barcodeTerm.trim()) {
+            onBarcodeScan(barcodeTerm.trim());
+            setBarcodeTerm(''); // Clear after scan
+        }
+         // Optional: Re-focus after a short delay to allow potential toast messages etc.
+         // setTimeout(() => barcodeInputRef.current?.focus(), 100);
+    };
 
   // Effect to focus the barcode input on component mount
    React.useEffect(() => {
@@ -55,15 +65,8 @@ export function ProductSearch({ onSearch, onBarcodeScan }: ProductSearchProps) {
             value={barcodeTerm}
             onChange={handleBarcodeChange}
             onKeyDown={handleBarcodeKeyDown} // Handle Enter key
-             onBlur={() => { // Scan on blur if input is not empty
-                 if (barcodeTerm.trim()) {
-                     onBarcodeScan(barcodeTerm.trim());
-                     setBarcodeTerm(''); // Clear after scan
-                     // Re-focus after a short delay to allow potential toast messages etc.
-                     setTimeout(() => barcodeInputRef.current?.focus(), 100);
-                 }
-             }}
-            aria-label="Scan Barcode"
+            onBlur={handleBarcodeBlur} // Handle blur event
+            aria-label="Scan Barcode or Enter ID"
            />
          </div>
 

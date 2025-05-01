@@ -1,7 +1,8 @@
+
 "use client"; // Required for hooks like useState, useEffect, and custom hooks
 
 import * as React from 'react';
-import { getProducts, getProductById, findAlternativeProducts } from '@/lib/data'; // Add getProductById, findAlternativeProducts
+import { getProducts, getProductById, findAlternativeProducts, getProductByBarcode } from '@/lib/data'; // Add getProductByBarcode
 import type { Product } from '@/lib/types';
 import { ProductSearch } from '@/components/pos/product-search';
 import { ProductList } from '@/components/pos/product-list';
@@ -66,14 +67,20 @@ export default function PharmacyPosPage() {
   };
 
    // Handle barcode scan: Find product and add to cart or suggest alternatives
-   const handleBarcodeScan = async (barcode: string) => {
+   const handleBarcodeScan = async (barcodeOrId: string) => {
+    if (!barcodeOrId) return; // Ignore empty scans
+
     setIsLoading(true); // Show loading indicator while searching
     try {
-        let product = allProducts.find(p => p.barcode === barcode || p.id === barcode);
+        // Attempt to find by barcode first, then by ID as fallback
+        let product = await getProductByBarcode(barcodeOrId);
+        if (!product) {
+            product = await getProductById(barcodeOrId); // Try finding by ID
+        }
 
       if (product) {
         if (product.quantity > 0) {
-          addItem(product, 1); // Add 1 item to the cart
+          addItem(product, 1, 'main'); // Add 1 main unit to the cart
           toast({
             title: "تمت الإضافة للسلة",
             description: `${product.nameAr} تمت إضافته بواسطة الباركود/الكود.`,
@@ -99,12 +106,13 @@ export default function PharmacyPosPage() {
                   description: `لم يتم العثور على بدائل متوفرة للمنتج ${product.nameAr}.`,
                   variant: "destructive",
                });
+                 setOriginalScannedProduct(null); // Reset if no alternatives found
           }
         }
       } else {
         toast({
           title: "لم يتم العثور على المنتج",
-          description: `لم يتم العثور على منتج بالباركود أو الكود: ${barcode}`,
+          description: `لم يتم العثور على منتج بالباركود أو الكود: ${barcodeOrId}`,
           variant: "destructive",
         });
          setOriginalScannedProduct(null);
@@ -121,7 +129,7 @@ export default function PharmacyPosPage() {
   };
 
    const handleAddAlternative = (alternative: Product) => {
-      addItem(alternative, 1);
+      addItem(alternative, 1, 'main'); // Add 1 main unit of the alternative
       toast({
         title: "تمت إضافة البديل للسلة",
         description: `${alternative.nameAr} تمت إضافته كبديل.`,
@@ -136,11 +144,11 @@ export default function PharmacyPosPage() {
     <AlertDialog open={showAlternativesDialog} onOpenChange={setShowAlternativesDialog}>
       <main className="flex-1 flex flex-col overflow-hidden h-[calc(100vh-4rem)]"> {/* Adjust height based on layout header */}
         {/* Sticky Header with Search and Cart */}
-        <div className="p-4 border-b bg-secondary/30 sticky top-0 z-10 flex items-center justify-between gap-4">
+        <div className="p-4 border-b bg-secondary/30 sticky top-0 z-10 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
           <div className="flex-grow">
               <ProductSearch onSearch={handleSearch} onBarcodeScan={handleBarcodeScan} />
           </div>
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0 self-end sm:self-center"> {/* Align cart summary */}
             <CartSummary /> {/* Add the CartSummary component here */}
           </div>
         </div>
