@@ -6,6 +6,7 @@ export interface Product {
   manufacturer?: string; // الشركة المصنعة
   concentration?: string; // التركيز
   price: number; // Price of the main unit (e.g., box) - سعر البيع
+  lastPurchaseCost?: number; // Optional: Last purchase cost per main unit - آخر سعر شراء للوحدة الرئيسية
   quantity: number; // Quantity of the main unit in stock (can be fractional)
   categoryIcon?: React.ComponentType<{ className?: string }>; // Optional icon component
   barcode?: string; // Optional barcode field
@@ -47,6 +48,7 @@ export interface SaleTransactionItem {
     quantity: number; // Quantity of the sold unit
     price: number; // Price per sold unit at the time of sale (after discount)
     soldUnitType: 'main' | 'sub'; // Record which unit was sold
+    costAtSale?: number; // Optional: Store the cost of the item at the time of sale for profit calculation
 }
 
 export type PaymentMethod = 'cash' | 'card' | 'debt';
@@ -98,4 +100,9 @@ export interface User {
 // Helper type for products nearing expiry
 export interface ProductExpiryInfo extends Pick<Product, 'id' | 'nameAr' | 'expiryDate' | 'quantity'> {
     daysUntilExpiry: number;
+}
+
+// Helper type for Inventory Report
+export interface InventoryReportItem extends Pick<Product, 'id' | 'nameAr' | 'nameEn' | 'barcode' | 'quantity' | 'price' | 'expiryDate' | 'unitType' | 'lastPurchaseCost'> {
+    inventoryValue: number; // quantity * lastPurchaseCost
 }

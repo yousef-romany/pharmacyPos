@@ -57,7 +57,8 @@ const reportNavItems = [
     { href: '/reports/sales', label: 'تقرير المبيعات' },
     { href: '/reports/profit-loss', label: 'تقرير الأرباح والخسائر' },
     { href: '/reports/debts', label: 'تقرير المديونيات' },
-    // Add more reports here: Inventory, Expiry, etc.
+    { href: '/reports/inventory', label: 'تقرير المخزون' }, // Added Inventory Report
+    // Add more reports here: Expiry, etc.
 ];
 
 

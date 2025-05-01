@@ -1,5 +1,5 @@
 
-import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User, ProductExpiryInfo, PaymentMethod, PaymentStatus, UserRole } from '@/lib/types';
+import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User, ProductExpiryInfo, InventoryReportItem, PaymentMethod, PaymentStatus, UserRole } from '@/lib/types';
 import { Pill, Baby, SprayCan, Activity } from 'lucide-react';
 import { differenceInDays, addDays, isBefore, isSameDay } from 'date-fns';
 
@@ -9,88 +9,94 @@ let sampleProducts: Product[] = [
     id: 'prod-001',
     nameAr: 'بنادول اكسترا',
     nameEn: 'Panadol Extra',
-    manufacturer: 'GSK', // Added
-    concentration: '500mg Paracetamol, 65mg Caffeine', // Added
-    price: 15.50, // Price per box
-    quantity: 8, // Boxes in stock - LOW STOCK EXAMPLE
+    manufacturer: 'GSK',
+    concentration: '500mg Paracetamol, 65mg Caffeine',
+    price: 15.50,
+    lastPurchaseCost: 10.50, // Added
+    quantity: 8,
     categoryIcon: Pill,
     barcode: '6281060000010',
-    unitType: 'علبة', // Main unit
-    subUnitType: 'شريط', // Sub unit
-    subUnitsPerUnit: 2, // 2 strips per box
-    expiryDate: addDays(new Date(), 60), // Expires in ~2 months
-    minStockLevel: 10, // Minimum 10 boxes
-    discountRate: 5, // 5% discount
+    unitType: 'علبة',
+    subUnitType: 'شريط',
+    subUnitsPerUnit: 2,
+    expiryDate: addDays(new Date(), 60),
+    minStockLevel: 10,
+    discountRate: 5,
   },
   {
     id: 'prod-002',
     nameAr: 'فيتامين سي فوار',
     nameEn: 'Vitamin C Effervescent',
-    manufacturer: 'Generic Pharma', // Added
-    concentration: '1000mg Vitamin C', // Added
-    price: 22.00, // Price per tube/box
+    manufacturer: 'Generic Pharma',
+    concentration: '1000mg Vitamin C',
+    price: 22.00,
+    lastPurchaseCost: 16.00, // Added
     quantity: 80,
     categoryIcon: Activity,
     barcode: '6281060000027',
-    unitType: 'علبة', // Main unit (e.g., a tube)
-    subUnitType: 'قرص', // Sub unit
-    subUnitsPerUnit: 10, // 10 tablets per tube
-    expiryDate: addDays(new Date(), 300), // Expires in ~10 months
+    unitType: 'علبة',
+    subUnitType: 'قرص',
+    subUnitsPerUnit: 10,
+    expiryDate: addDays(new Date(), 300),
     minStockLevel: 20,
   },
   {
     id: 'prod-003',
     nameAr: 'حليب أطفال المرحلة 1',
     nameEn: 'Baby Milk Stage 1',
-    manufacturer: 'Nestle', // Added
+    manufacturer: 'Nestle',
     price: 55.75,
+    lastPurchaseCost: 45.00, // Added
     quantity: 45,
     categoryIcon: Baby,
     barcode: '6281060000034',
-    unitType: 'علبة', // Only main unit
-    expiryDate: addDays(new Date(), 15), // EXPIRES SOON EXAMPLE
+    unitType: 'علبة',
+    expiryDate: addDays(new Date(), 15),
     minStockLevel: 15,
   },
   {
     id: 'prod-004',
     nameAr: 'بخاخ الأنف',
     nameEn: 'Nasal Spray',
-    manufacturer: 'Pharma Co.', // Added
-    concentration: '0.05% Oxymetazoline', // Added
+    manufacturer: 'Pharma Co.',
+    concentration: '0.05% Oxymetazoline',
     price: 30.00,
+    lastPurchaseCost: 20.00, // Added
     quantity: 60,
     categoryIcon: SprayCan,
     barcode: '6281060000041',
-    unitType: 'بخاخ', // Only main unit
-    expiryDate: addDays(new Date(), -10), // EXPIRED EXAMPLE
+    unitType: 'بخاخ',
+    expiryDate: addDays(new Date(), -10),
     minStockLevel: 10,
   },
   {
     id: 'prod-005',
     nameAr: 'أقراص مسكنة للألم',
     nameEn: 'Pain Relief Tablets',
-    manufacturer: 'Jamjoom Pharma', // Added
-    concentration: '400mg Ibuprofen', // Added
-    price: 12.25, // Price per box
-    quantity: 200, // Boxes in stock
+    manufacturer: 'Jamjoom Pharma',
+    concentration: '400mg Ibuprofen',
+    price: 12.25,
+    lastPurchaseCost: 8.00, // Added
+    quantity: 200,
     categoryIcon: Pill,
     barcode: '6281060000058',
     unitType: 'علبة',
     subUnitType: 'شريط',
-    subUnitsPerUnit: 3, // 3 strips per box
-    expiryDate: addDays(new Date(), 180), // Expires in ~6 months
+    subUnitsPerUnit: 3,
+    expiryDate: addDays(new Date(), 180),
     minStockLevel: 50,
   },
   {
     id: 'prod-006',
     nameAr: 'مكمل غذائي حديد',
     nameEn: 'Iron Supplement',
-    manufacturer: 'VitaHealth', // Added
+    manufacturer: 'VitaHealth',
     price: 40.00,
-    quantity: 5, // LOW STOCK EXAMPLE
+    lastPurchaseCost: 28.00, // Added
+    quantity: 5,
     categoryIcon: Activity,
     barcode: '6281060000065',
-    unitType: 'علبة', // Only main unit
+    unitType: 'علبة',
     expiryDate: addDays(new Date(), 400),
     minStockLevel: 10,
   },
@@ -98,26 +104,28 @@ let sampleProducts: Product[] = [
     id: 'prod-007',
     nameAr: 'كريم حفاضات للأطفال',
     nameEn: 'Baby Diaper Cream',
-    manufacturer: 'Sudocrem', // Added
+    manufacturer: 'Sudocrem',
     price: 25.50,
+    lastPurchaseCost: 18.00, // Added
     quantity: 70,
     categoryIcon: Baby,
     barcode: '6281060000072',
-    unitType: 'أنبوب', // Only main unit
-    expiryDate: addDays(new Date(), 90), // Expires in ~3 months
+    unitType: 'أنبوب',
+    expiryDate: addDays(new Date(), 90),
     minStockLevel: 25,
-     discountRate: 10, // 10% discount
+     discountRate: 10,
   },
   {
     id: 'prod-008',
     nameAr: 'شراب سعال',
     nameEn: 'Cough Syrup',
-    manufacturer: 'Prospan', // Added
+    manufacturer: 'Prospan',
     price: 18.00,
+    lastPurchaseCost: 12.50, // Added
     quantity: 110,
-    categoryIcon: SprayCan, // Placeholder, could be Bottle icon
+    categoryIcon: SprayCan,
     barcode: '6281060000089',
-    unitType: 'زجاجة', // Only main unit
+    unitType: 'زجاجة',
     expiryDate: addDays(new Date(), 500),
     minStockLevel: 30,
   },
@@ -130,6 +138,7 @@ export async function getProducts(): Promise<Product[]> {
    // Parse expiry dates if they are stored as strings
    return sampleProducts.map(p => ({
      ...p,
+     lastPurchaseCost: p.lastPurchaseCost ?? p.price * 0.7, // Estimate cost if missing
      expiryDate: p.expiryDate ? new Date(p.expiryDate) : undefined, // Ensure expiryDate is a Date object
    }));
 }
@@ -137,14 +146,22 @@ export async function getProducts(): Promise<Product[]> {
 export async function getProductById(id: string): Promise<Product | undefined> {
   await new Promise(resolve => setTimeout(resolve, 20));
   const product = sampleProducts.find(p => p.id === id);
-  return product ? { ...product, expiryDate: product.expiryDate ? new Date(product.expiryDate) : undefined } : undefined;
+  return product ? {
+      ...product,
+      lastPurchaseCost: product.lastPurchaseCost ?? product.price * 0.7, // Estimate cost if missing
+      expiryDate: product.expiryDate ? new Date(product.expiryDate) : undefined
+  } : undefined;
 }
 
 // Simulate finding product by barcode (in real app, query DB/API)
 export async function getProductByBarcode(barcode: string): Promise<Product | undefined> {
     await new Promise(resolve => setTimeout(resolve, 20));
     const product = sampleProducts.find(p => p.barcode === barcode);
-     return product ? { ...product, expiryDate: product.expiryDate ? new Date(product.expiryDate) : undefined } : undefined;
+     return product ? {
+         ...product,
+         lastPurchaseCost: product.lastPurchaseCost ?? product.price * 0.7, // Estimate cost if missing
+         expiryDate: product.expiryDate ? new Date(product.expiryDate) : undefined
+     } : undefined;
 }
 
 
@@ -154,9 +171,10 @@ export async function addProduct(productData: Omit<Product, 'id'>): Promise<Prod
     id: `prod-${Date.now().toString()}-${Math.random().toString(16).substring(2, 8)}`, // Generate unique ID
     nameAr: productData.nameAr,
     nameEn: productData.nameEn,
-    manufacturer: productData.manufacturer, // Added
-    concentration: productData.concentration, // Added
+    manufacturer: productData.manufacturer,
+    concentration: productData.concentration,
     price: productData.price || 0,
+    lastPurchaseCost: productData.lastPurchaseCost, // Store initial purchase cost if provided
     quantity: productData.quantity || 0,
     categoryIcon: productData.categoryIcon || Pill, // Default icon
     barcode: productData.barcode || '',
@@ -207,6 +225,12 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
   if (typeof updatedProduct.price === 'number' && updatedProduct.price < 0) {
     updatedProduct.price = 0;
   }
+
+   // Ensure lastPurchaseCost is non-negative
+   if (updates.lastPurchaseCost !== undefined && typeof updates.lastPurchaseCost === 'number' && updates.lastPurchaseCost < 0) {
+      updatedProduct.lastPurchaseCost = 0;
+   }
+
   // Ensure minStockLevel is non-negative integer or undefined
    if (updates.minStockLevel !== undefined) {
      updatedProduct.minStockLevel = Number.isInteger(updates.minStockLevel) && updates.minStockLevel >= 0 ? updates.minStockLevel : undefined;
@@ -352,7 +376,7 @@ export async function updateCustomer(id: string, updates: Partial<Customer>): Pr
   sampleCustomers[index] = updatedCustomer;
    console.log("Updated Customer:", sampleCustomers[index]);
    console.log("Current Customers:", sampleCustomers);
-  return sampleCustomers[index];
+  return updatedCustomer;
 }
 
 export async function deleteCustomer(id: string): Promise<boolean> {
@@ -382,15 +406,17 @@ export async function getSales(): Promise<SaleTransaction[]> {
     })).sort((a, b) => b.date.getTime() - a.date.getTime());
 }
 
-// Function to add a sale and update product quantities
+// Function to add a sale and update product quantities & costAtSale
 export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<SaleTransaction> {
     await new Promise(resolve => setTimeout(resolve, 50)); // Simulate delay
 
-     // Calculate original total amount before discount
-    const calculateOriginalTotal = async (items: SaleTransactionItem[]): Promise<number> => {
+     // Calculate original total amount before discount and prepare items with cost
+    const calculateOriginalTotalAndPrepareItems = async (items: SaleTransactionItem[]): Promise<{ originalTotal: number; preparedItems: SaleTransactionItem[] }> => {
         let originalTotal = 0;
+        const preparedItems: SaleTransactionItem[] = [];
         for (const item of items) {
             const product = await getProductById(item.productId);
+             const costAtSale = product?.lastPurchaseCost; // Get cost at time of sale
             if (product) {
                  const originalPrice = item.soldUnitType === 'sub' && product.subUnitsPerUnit
                      ? product.price / product.subUnitsPerUnit
@@ -400,18 +426,23 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
                  // Fallback if product details are missing, use the sale price as original
                  originalTotal += item.price * item.quantity;
             }
+            preparedItems.push({ ...item, costAtSale });
         }
-        return originalTotal;
+        return { originalTotal, preparedItems };
     };
 
 
-    const originalTotalAmount = await calculateOriginalTotal(saleData.items);
+    const { originalTotal, preparedItems } = await calculateOriginalTotalAndPrepareItems(saleData.items);
 
     const newSale: SaleTransaction = {
-        ...saleData,
+        customerId: saleData.customerId,
+        items: preparedItems, // Use items with costAtSale
+        totalAmount: saleData.totalAmount,
+        paymentMethod: saleData.paymentMethod,
+        amountPaid: saleData.amountPaid,
         id: `sale-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`, // Unique sale ID
         date: saleData.date || new Date(), // Ensure date exists
-        originalTotalAmount: originalTotalAmount, // Store original total
+        originalTotalAmount: originalTotal, // Store original total
     };
     sampleSales.push(newSale);
     console.log("Added Sale:", newSale);
@@ -445,7 +476,7 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
        const customer = await getCustomerById(newSale.customerId);
        if (customer) {
            const debtAmount = newSale.totalAmount - newSale.amountPaid; // Calculate the debt incurred
-           const newBalance = (customer.balance || 0) - debtAmount; // Decrease balance (more negative means more debt)
+           const newBalance = (customer.balance ?? 0) - debtAmount; // Decrease balance (more negative means more debt)
            await updateCustomer(newSale.customerId, { balance: newBalance });
            console.log(`Updated customer ${newSale.customerId} balance to ${newBalance}`);
        } else {
@@ -475,7 +506,7 @@ export async function getPurchases(): Promise<PurchaseTransaction[]> {
    })).sort((a, b) => b.date.getTime() - a.date.getTime()); // Return sorted copy
 }
 
-// Function to add a purchase transaction and update product quantities
+// Function to add a purchase transaction and update product quantities and cost
 export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id'>): Promise<PurchaseTransaction> {
     await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -503,21 +534,22 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id'>)
     samplePurchases.push(newPurchase);
     console.log("Added Purchase:", newPurchase);
 
-    // Update product quantities after purchase (assuming purchase items are always main units)
+    // Update product quantities and lastPurchaseCost after purchase
      await Promise.all(newPurchase.items.map(async (item: PurchaseTransactionItem) => {
         const product = await getProductById(item.productId);
         if (product) {
             const newQuantity = product.quantity + item.quantity;
-            // Update cost only if needed (e.g., based on FIFO/LIFO or average cost)
-            // For simplicity, we might just update quantity here. Cost update logic depends on requirements.
-             // Also update expiry date if provided in the purchase item
-            const updates: Partial<Omit<Product, 'id'>> = { quantity: newQuantity };
+             // Update last purchase cost and expiry date if provided
+            const updates: Partial<Omit<Product, 'id'>> = {
+                quantity: newQuantity,
+                lastPurchaseCost: item.cost // Update the last cost
+            };
             if (item.expiryDate) {
                 updates.expiryDate = new Date(item.expiryDate);
             }
 
             await updateProduct(item.productId, updates);
-            console.log(`Updated product ${item.productId} quantity to ${newQuantity} ${updates.expiryDate ? `and expiry to ${updates.expiryDate.toLocaleDateString()}` : ''}`);
+            console.log(`Updated product ${item.productId}: quantity=${newQuantity}, cost=${item.cost} ${updates.expiryDate ? `, expiry=${updates.expiryDate.toLocaleDateString()}` : ''}`);
         } else {
             console.warn(`Product with ID ${item.productId} not found during purchase update.`);
             // Handle adding the product if it doesn't exist (or log error)
@@ -525,6 +557,8 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id'>)
         }
      }));
     console.log("Product quantities updated after purchase.");
+
+    // TODO: Update supplier balance/account if tracking supplier debts
 
     return newPurchase;
 }
@@ -607,7 +641,7 @@ export function calculateDaysUntilExpiry(expiryDate?: Date): number {
 
 
 // Get products nearing expiry (e.g., within the next 90 days)
-export async function getProductsNearingExpiry(daysThreshold: number = 90): Promise<ProductExpiryInfo[]> {
+export async function getProductsNearingExpiry(daysThreshold: number = 60): Promise<ProductExpiryInfo[]> { // Changed threshold to 60
     const products = await getProducts();
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Normalize today's date
@@ -682,4 +716,21 @@ export async function getTotalPurchasesForToday(): Promise<number> {
 export async function getCustomersWithDebt(): Promise<Customer[]> {
     const customers = await getCustomers();
     return customers.filter(customer => (customer.balance ?? 0) < 0);
+}
+
+// --- Inventory Report Data ---
+export async function getInventoryReportData(): Promise<InventoryReportItem[]> {
+  const products = await getProducts();
+  return products.map(product => ({
+    id: product.id,
+    nameAr: product.nameAr,
+    nameEn: product.nameEn,
+    barcode: product.barcode,
+    quantity: product.quantity,
+    price: product.price,
+    lastPurchaseCost: product.lastPurchaseCost, // Use the stored cost
+    unitType: product.unitType,
+    expiryDate: product.expiryDate,
+    inventoryValue: product.quantity * (product.lastPurchaseCost || 0), // Calculate inventory value
+  }));
 }
