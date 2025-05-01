@@ -40,14 +40,20 @@ interface LowStockProduct {
 // Helper to get icon name from component
 function getIconName(IconComponent?: React.ComponentType<any>): string {
     if (!IconComponent) return 'Unknown';
+    // Example mappings - adjust based on actual icons used in Product data
     if (IconComponent === Pill) return 'Pill';
     if (IconComponent === Baby) return 'Baby';
     if (IconComponent === SprayCan) return 'SprayCan';
     if (IconComponent === Activity) return 'Activity';
-    const nameMatch = IconComponent.toString().match(/function\s*([^\s(]+)/);
-     if (nameMatch && nameMatch[1]) return nameMatch[1];
-    return 'Unknown';
+    // Add more specific checks if needed
+
+    // Fallback using component name (might be less reliable after minification)
+    const nameMatch = IconComponent.displayName || IconComponent.name;
+    if (nameMatch) return nameMatch;
+
+    return 'Unknown'; // Default fallback
 }
+
 
 // Mapping from icon name (or component name) to Arabic label
 const categoryLabels: { [key: string]: string } = {
@@ -100,7 +106,7 @@ export default function DashboardOverviewPage() {
          // --- Calculate Category Sales ---
          const salesByCategory: { [key: string]: { totalSales: number, label: string } } = {};
           const productDetailsPromises = Array.from(new Set(sales.flatMap(s => s.items.map(i => i.productId))))
-              .map(id => getProductById(id));
+              .map(id => getProductById(id)); // Fetch details for involved products
           const productDetailsResults = await Promise.all(productDetailsPromises);
           const productMap = new Map<string, Product | undefined>(
              productDetailsResults.map(p => [p?.id || 'unknown', p])
@@ -111,7 +117,7 @@ export default function DashboardOverviewPage() {
                  const product = productMap.get(item.productId);
                  const categoryKey = product ? getIconName(product.categoryIcon) : 'Unknown';
                  const categoryLabel = categoryLabels[categoryKey] || categoryKey;
-                 const amount = item.price * item.quantity;
+                 const amount = item.price * item.quantity; // Use the price recorded at the time of sale
 
                  if (!salesByCategory[categoryKey]) {
                      salesByCategory[categoryKey] = { totalSales: 0, label: categoryLabel };
@@ -127,8 +133,8 @@ export default function DashboardOverviewPage() {
                 totalSales: data.totalSales,
                 fill: COLORS[index % COLORS.length],
             }))
-            .sort((a, b) => b.totalSales - a.totalSales)
-            .slice(0, 5);
+            .sort((a, b) => b.totalSales - a.totalSales) // Sort by highest sales
+            .slice(0, 5); // Take top 5
 
         setCategorySalesData(categoryData);
 
@@ -144,23 +150,28 @@ export default function DashboardOverviewPage() {
 
       } catch (error) {
         console.error("Failed to load dashboard data:", error);
-        // Handle error appropriately
+        // Handle error appropriately (e.g., show toast message)
       } finally {
         setIsLoading(false);
       }
     }
     loadDashboardData();
-  }, []);
+  }, []); // Empty dependency array means this runs once on mount
 
+
+    // Configuration for the category sales chart
     const chartConfig = React.useMemo(() => {
       const config: ChartConfig = { totalSales: { label: "إجمالي المبيعات (ر.س)" } };
       categorySalesData.forEach(cur => {
+          // Use the unique 'name' as the key for config
           config[cur.name] = { label: cur.label, color: cur.fill };
       });
       return config;
-   }, [categorySalesData]);
+   }, [categorySalesData]); // Recompute when category data changes
 
-    // Helper component for alert lists
+
+    // --- Reusable Alert List Component ---
+    // Defined inside the main component or imported if used elsewhere
     const AlertList = ({ title, description, icon: Icon, items, itemKey, itemValueKey, itemDateKey, linkPrefix, emptyMessage, isLoading, alertType }: {
         title: string;
         description?: string;
@@ -169,10 +180,10 @@ export default function DashboardOverviewPage() {
         itemKey: string; // e.g., 'id'
         itemValueKey: string; // e.g., 'quantity' or 'daysUntilExpiry'
         itemDateKey?: string; // e.g., 'expiryDate'
-        linkPrefix: string;
+        linkPrefix: string; // Base path for links (e.g., '/products')
         emptyMessage: string;
         isLoading: boolean;
-        alertType: 'lowStock' | 'expiringSoon' | 'expired';
+        alertType: 'lowStock' | 'expiringSoon' | 'expired'; // For styling
     }) => (
         <Card className="flex flex-col">
             <CardHeader>
@@ -191,21 +202,26 @@ export default function DashboardOverviewPage() {
                     </div>
                 ) : items.length > 0 ? (
                     <>
-                        <div className="flex-1 overflow-y-auto max-h-[200px]">
-                            <ul className="space-y-2 text-sm pr-2">
+                        <div className="flex-1 overflow-y-auto max-h-[200px]"> {/* Limit height and make scrollable */}
+                            <ul className="space-y-2 text-sm pr-2"> {/* Add padding for scrollbar */}
                                 {items.map((item) => (
                                     <li key={item[itemKey]} className="flex justify-between items-center border-b pb-1.5 gap-2">
                                         <Link href={`${linkPrefix}?search=${item[itemKey]}`} className="hover:underline hover:text-primary truncate pr-2 flex-1">
-                                            {item.nameAr}
+                                            {item.nameAr || 'اسم غير متوفر'} {/* Fallback name */}
                                         </Link>
                                         <span className={`font-semibold whitespace-nowrap ${alertType === 'expired' ? 'text-red-700' : alertType === 'lowStock' ? 'text-amber-600' : 'text-orange-500'}`}>
+                                            {/* Display value based on alert type */}
                                             {alertType === 'lowStock' && `${item[itemValueKey]} (الحد: ${item.minStockLevel ?? '-'})`}
                                             {alertType === 'expiringSoon' && `خلال ${item[itemValueKey]} يوم`}
                                             {alertType === 'expired' && `منذ ${Math.abs(item[itemValueKey])} يوم`}
                                         </span>
                                          {itemDateKey && item[itemDateKey] && (
                                             <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                                {format(new Date(item[itemDateKey]), 'dd/MM/yyyy', { locale: arSA })}
+                                                {/* Ensure date is valid before formatting */}
+                                                {new Date(item[itemDateKey]) instanceof Date && !isNaN(new Date(item[itemDateKey]).valueOf())
+                                                    ? format(new Date(item[itemDateKey]), 'dd/MM/yyyy', { locale: arSA })
+                                                    : '-'
+                                                }
                                             </span>
                                         )}
                                     </li>
@@ -228,14 +244,14 @@ export default function DashboardOverviewPage() {
      <div className="p-4 md:p-6 space-y-6">
        <h2 className="text-2xl font-semibold">لوحة التحكم الرئيسية</h2>
 
-       {/* Stats Cards */}
+       {/* Stats Cards Section */}
        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
            {isLoading ? (
                Array.from({ length: 5 }).map((_, index) => (
                    <Card key={index}>
                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                            <Skeleton className="h-4 w-2/4" />
-                           <Skeleton className="h-4 w-4" />
+                           <Skeleton className="h-4 w-4 rounded-full" />
                        </CardHeader>
                        <CardContent>
                            <Skeleton className="h-8 w-1/3 mb-2" />
@@ -246,20 +262,21 @@ export default function DashboardOverviewPage() {
            ) : (
                stats.map((stat, index) => (
                    <Card key={index}>
-                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                       <CardTitle className="text-sm font-medium">
-                       {stat.title}
-                       </CardTitle>
-                       <stat.icon className="h-4 w-4 text-muted-foreground" />
-                   </CardHeader>
-                   <CardContent>
-                       <div className="text-2xl font-bold">{stat.value}</div>
-                       {stat.description && (
-                       <p className="text-xs text-muted-foreground pt-1">
-                           {stat.description}
-                       </p>
-                       )}
-                   </CardContent>
+                       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                           <CardTitle className="text-sm font-medium">
+                               {stat.title}
+                           </CardTitle>
+                           {/* Render icon safely */}
+                           {React.createElement(stat.icon, { className: "h-4 w-4 text-muted-foreground" })}
+                       </CardHeader>
+                       <CardContent>
+                           <div className="text-2xl font-bold">{stat.value}</div>
+                           {stat.description && (
+                               <p className="text-xs text-muted-foreground pt-1">
+                                   {stat.description}
+                               </p>
+                           )}
+                       </CardContent>
                    </Card>
                ))
            )}
@@ -276,7 +293,7 @@ export default function DashboardOverviewPage() {
           </CardHeader>
           <CardContent className="flex-1 pb-0">
             {isLoading ? (
-                <div className="flex justify-center items-center h-full">
+                <div className="flex justify-center items-center h-full min-h-[250px]"> {/* Ensure skeleton has height */}
                     <Skeleton className="w-48 h-48 rounded-full" />
                 </div>
             ) : categorySalesData.length > 0 ? (
@@ -287,7 +304,7 @@ export default function DashboardOverviewPage() {
                           <Pie
                               data={categorySalesData}
                               dataKey="totalSales"
-                              nameKey="label"
+                              nameKey="label" // Use the display label for the chart legend/tooltip
                               cx="50%"
                               cy="50%"
                               outerRadius={100}
@@ -296,14 +313,14 @@ export default function DashboardOverviewPage() {
                               labelLine={false}
                           >
                              {categorySalesData.map((entry) => (
-                                <Cell key={`cell-${entry.name}`} fill={entry.fill} />
+                                <Cell key={`cell-${entry.name}`} fill={entry.fill} /> // Use unique name for key
                               ))}
                           </Pie>
                       </PieChart>
                   </ResponsiveContainer>
               </ChartContainer>
             ) : (
-                <p className="text-muted-foreground text-center py-10 flex-1 flex items-center justify-center">لا توجد بيانات مبيعات لعرضها.</p>
+                <p className="text-muted-foreground text-center py-10 flex-1 flex items-center justify-center min-h-[250px]">لا توجد بيانات مبيعات لعرضها.</p>
              )}
           </CardContent>
         </Card>
@@ -323,7 +340,7 @@ export default function DashboardOverviewPage() {
         />
     </div>
 
-      {/* Expiry Alerts */}
+      {/* Expiry Alerts Section */}
      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
          {/* Expiring Soon Products */}
          <AlertList
@@ -332,7 +349,7 @@ export default function DashboardOverviewPage() {
             items={expiringSoonProducts}
             itemKey="id"
             itemValueKey="daysUntilExpiry"
-            itemDateKey="expiryDate"
+            itemDateKey="expiryDate" // Pass the key for the expiry date
             linkPrefix="/products"
             emptyMessage={`لا توجد منتجات ستنتهي خلال ${NEAR_EXPIRY_DAYS} يوم.`}
             isLoading={isLoading}
@@ -346,7 +363,7 @@ export default function DashboardOverviewPage() {
             items={expiredProducts}
             itemKey="id"
             itemValueKey="daysUntilExpiry"
-             itemDateKey="expiryDate"
+             itemDateKey="expiryDate" // Pass the key for the expiry date
             linkPrefix="/products"
             emptyMessage="لا توجد منتجات منتهية الصلاحية."
             isLoading={isLoading}
@@ -356,4 +373,5 @@ export default function DashboardOverviewPage() {
    </div>
  );
 }
+
 
