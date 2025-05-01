@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -16,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // For potential filtering
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // For filter popover
 import { SaleDetailsDialog } from '@/app/(dashboard)/sales/page'; // Reuse SaleDetailsDialog if appropriate, adjust path if needed
+import { Dialog } from '@/components/ui/dialog'; // Import Dialog for the wrapper
 
 // Helper to determine if SaleDetailsDialog is defined (adjust path if needed)
 const isSaleDetailsDialogAvailable = typeof SaleDetailsDialog !== 'undefined';
@@ -103,215 +103,168 @@ export default function SalesReportPage() {
   };
 
   return (
-     // Wrap with Dialog provider if SaleDetailsDialog is used
-    <div className="p-4 md:p-6 space-y-6">
-      <div className="flex flex-wrap justify-between items-center gap-4">
-        <h2 className="text-2xl font-semibold flex items-center gap-2">
-          <HandCoins className="w-6 h-6" />
-          تقرير المبيعات
-        </h2>
-         <div className="flex items-center gap-2">
-            {/* Filter Popover */}
-             <Popover>
-                <PopoverTrigger asChild>
-                     <Button variant="outline">
-                        <Filter className="ml-2 h-4 w-4" />
-                         تصفية
-                     </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80">
-                     <div className="grid gap-4">
-                         <div className="space-y-2">
-                             <h4 className="font-medium leading-none">فلاتر التقرير</h4>
-                             <p className="text-sm text-muted-foreground">
-                                 حدد معايير التصفية لعرض المبيعات.
-                             </p>
+     // Wrap with Dialog provider if SaleDetailsDialog is used and defined
+     <Dialog onOpenChange={(open) => !open && setSelectedSale(null)}>
+        <div className="p-4 md:p-6 space-y-6">
+          <div className="flex flex-wrap justify-between items-center gap-4">
+            <h2 className="text-2xl font-semibold flex items-center gap-2">
+              <HandCoins className="w-6 h-6" />
+              تقرير المبيعات
+            </h2>
+             <div className="flex items-center gap-2">
+                {/* Filter Popover */}
+                 <Popover>
+                    <PopoverTrigger asChild>
+                         <Button variant="outline">
+                            <Filter className="ml-2 h-4 w-4" />
+                             تصفية
+                         </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-80">
+                         <div className="grid gap-4">
+                             <div className="space-y-2">
+                                 <h4 className="font-medium leading-none">فلاتر التقرير</h4>
+                                 <p className="text-sm text-muted-foreground">
+                                     حدد معايير التصفية لعرض المبيعات.
+                                 </p>
+                             </div>
+                             <div className="grid gap-2">
+                                 <div className="grid grid-cols-2 items-center gap-4">
+                                    <label htmlFor="dateFrom">من تاريخ</label>
+                                     <DatePicker date={dateFrom} setDate={setDateFrom} buttonClassName="h-8 text-xs w-full" />
+                                 </div>
+                                  <div className="grid grid-cols-2 items-center gap-4">
+                                    <label htmlFor="dateTo">إلى تاريخ</label>
+                                     <DatePicker date={dateTo} setDate={setDateTo} buttonClassName="h-8 text-xs w-full" />
+                                 </div>
+                                 <div className="grid grid-cols-2 items-center gap-4">
+                                     <label htmlFor="customerFilter">العميل</label>
+                                     <Input id="customerFilter" placeholder="اسم أو كود..." className="h-8" value={customerFilter} onChange={e => setCustomerFilter(e.target.value)} />
+                                 </div>
+                                  <div className="grid grid-cols-2 items-center gap-4">
+                                     <label htmlFor="paymentMethodFilter">طريقة الدفع</label>
+                                      <Select value={paymentMethodFilter} onValueChange={setPaymentMethodFilter}>
+                                        <SelectTrigger className="h-8">
+                                            <SelectValue placeholder="الكل" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">الكل</SelectItem>
+                                            <SelectItem value="cash">نقداً</SelectItem>
+                                            <SelectItem value="card">بطاقة</SelectItem>
+                                            <SelectItem value="debt">آجل</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                 </div>
+                             </div>
+                              <Button variant="outline" size="sm" onClick={resetFilters}>إعادة تعيين الفلاتر</Button>
                          </div>
-                         <div className="grid gap-2">
-                             <div className="grid grid-cols-2 items-center gap-4">
-                                <Label htmlFor="dateFrom">من تاريخ</Label>
-                                 <DatePicker date={dateFrom} setDate={setDateFrom} buttonClassName="h-8 text-xs w-full" />
-                             </div>
-                              <div className="grid grid-cols-2 items-center gap-4">
-                                <Label htmlFor="dateTo">إلى تاريخ</Label>
-                                 <DatePicker date={dateTo} setDate={setDateTo} buttonClassName="h-8 text-xs w-full" />
-                             </div>
-                             <div className="grid grid-cols-2 items-center gap-4">
-                                 <Label htmlFor="customerFilter">العميل</Label>
-                                 <Input id="customerFilter" placeholder="اسم أو كود..." className="h-8" value={customerFilter} onChange={e => setCustomerFilter(e.target.value)} />
-                             </div>
-                              <div className="grid grid-cols-2 items-center gap-4">
-                                 <Label htmlFor="paymentMethodFilter">طريقة الدفع</Label>
-                                  <Select value={paymentMethodFilter} onValueChange={setPaymentMethodFilter}>
-                                    <SelectTrigger className="h-8">
-                                        <SelectValue placeholder="الكل" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="all">الكل</SelectItem>
-                                        <SelectItem value="cash">نقداً</SelectItem>
-                                        <SelectItem value="card">بطاقة</SelectItem>
-                                        <SelectItem value="debt">آجل</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                             </div>
-                         </div>
-                          <Button variant="outline" size="sm" onClick={resetFilters}>إعادة تعيين الفلاتر</Button>
-                     </div>
-                </PopoverContent>
-             </Popover>
-            <Button variant="outline" onClick={() => window.print()}> {/* Basic print */}
-              <Printer className="ml-2 h-4 w-4" />
-              طباعة التقرير
-            </Button>
-        </div>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>ملخص المبيعات (الفترة المحددة)</CardTitle>
-          <CardDescription>إجمالي المبيعات وعدد الفواتير حسب الفلاتر المطبقة.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-             <div className="flex justify-around">
-                 <Skeleton className="h-8 w-24" />
-                 <Skeleton className="h-8 w-32" />
-             </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4 text-center">
-              <div>
-                <p className="text-sm text-muted-foreground">عدد الفواتير</p>
-                <p className="text-2xl font-bold">{filteredSales.length}</p>
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">إجمالي قيمة المبيعات</p>
-                <p className="text-2xl font-bold">{totalFilteredSalesAmount.toFixed(2)} ر.س</p>
-              </div>
+                    </PopoverContent>
+                 </Popover>
+                <Button variant="outline" onClick={() => window.print()}> {/* Basic print */}
+                  <Printer className="ml-2 h-4 w-4" />
+                  طباعة التقرير
+                </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>تفاصيل فواتير المبيعات</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>رقم الفاتورة</TableHead>
-                  <TableHead>العميل</TableHead>
-                  <TableHead>التاريخ والوقت</TableHead>
-                  <TableHead>طريقة الدفع</TableHead>
-                  <TableHead>إجمالي المبلغ (ر.س)</TableHead>
-                  <TableHead className="text-right">إجراءات</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  Array.from({ length: 5 }).map((_, index) => (
-                    <TableRow key={index}>
-                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-40" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                       <TableCell className="text-right"><Skeleton className="h-8 w-8 rounded-md" /></TableCell>
-                    </TableRow>
-                  ))
-                ) : filteredSales.length > 0 ? (
-                  filteredSales.map((sale) => (
-                    <TableRow key={sale.id}>
-                      <TableCell className="font-medium">{sale.id.substring(0, 8)}...</TableCell>
-                      <TableCell>{sale.customerId ? (customers.get(sale.customerId) || sale.customerId) : 'عميل نقدي'}</TableCell>
-                      <TableCell>{format(new Date(sale.date), 'dd/MM/yyyy HH:mm', { locale: arSA })}</TableCell>
-                      <TableCell>{sale.paymentMethod}</TableCell> {/* TODO: Enhance display */}
-                      <TableCell>{sale.totalAmount.toFixed(2)}</TableCell>
-                      <TableCell className="text-right">
-                           {isSaleDetailsDialogAvailable ? (
-                              <Popover> {/* Use Popover for quick view or Dialog for full details */}
-                                  <PopoverTrigger asChild>
-                                       <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedSale(sale)}>
-                                         <Eye className="h-4 w-4" />
-                                       </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-96">
-                                      {/* Render a compact version of sale details here or link to full dialog */}
-                                      <p>تفاصيل سريعة للفاتورة {sale.id.substring(0,6)}...</p>
-                                      <p>الإجمالي: {sale.totalAmount.toFixed(2)}</p>
-                                      {/* Consider adding a button to open full SaleDetailsDialog */}
-                                  </PopoverContent>
-                              </Popover>
-                           ) : (
-                               <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => alert(`عرض تفاصيل الفاتورة ${sale.id}`)}>
-                                 <Eye className="h-4 w-4" />
-                               </Button>
-                           )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                      لا توجد فواتير مبيعات تطابق الفلاتر المحددة.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
           </div>
-           {/* Add Pagination if needed */}
-        </CardContent>
-      </Card>
 
-       {/* Full Sale Details Dialog - Requires Dialog provider */}
-        {isSaleDetailsDialogAvailable && selectedSale && (
-            <SaleDetailsDialog
-                sale={selectedSale}
-                customerName={selectedSale?.customerId ? customers.get(selectedSale.customerId) : undefined}
-                onClose={() => setSelectedSale(null)}
-            />
-        )}
-    </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>ملخص المبيعات (الفترة المحددة)</CardTitle>
+              <CardDescription>إجمالي المبيعات وعدد الفواتير حسب الفلاتر المطبقة.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                 <div className="flex justify-around">
+                     <Skeleton className="h-8 w-24" />
+                     <Skeleton className="h-8 w-32" />
+                 </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4 text-center">
+                  <div>
+                    <p className="text-sm text-muted-foreground">عدد الفواتير</p>
+                    <p className="text-2xl font-bold">{filteredSales.length}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">إجمالي قيمة المبيعات</p>
+                    <p className="text-2xl font-bold">{totalFilteredSalesAmount.toFixed(2)} ر.س</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>تفاصيل فواتير المبيعات</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>رقم الفاتورة</TableHead>
+                      <TableHead>العميل</TableHead>
+                      <TableHead>التاريخ والوقت</TableHead>
+                      <TableHead>طريقة الدفع</TableHead>
+                      <TableHead>إجمالي المبلغ (ر.س)</TableHead>
+                      <TableHead className="text-right">إجراءات</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      Array.from({ length: 5 }).map((_, index) => (
+                        <TableRow key={index}>
+                          <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-32" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-40" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-16" /></TableCell>
+                          <TableCell><Skeleton className="h-4 w-24" /></TableCell>
+                           <TableCell className="text-right"><Skeleton className="h-8 w-8 rounded-md" /></TableCell>
+                        </TableRow>
+                      ))
+                    ) : filteredSales.length > 0 ? (
+                      filteredSales.map((sale) => (
+                        <TableRow key={sale.id}>
+                          <TableCell className="font-medium">{sale.id.substring(0, 8)}...</TableCell>
+                          <TableCell>{sale.customerId ? (customers.get(sale.customerId) || sale.customerId) : 'عميل نقدي'}</TableCell>
+                          <TableCell>{format(new Date(sale.date), 'dd/MM/yyyy HH:mm', { locale: arSA })}</TableCell>
+                          <TableCell>{sale.paymentMethod}</TableCell> {/* TODO: Enhance display */}
+                          <TableCell>{sale.totalAmount.toFixed(2)}</TableCell>
+                          <TableCell className="text-right">
+                               {/* Use DialogTrigger directly here if SaleDetailsDialog is defined */}
+                               <Dialog.Trigger asChild>
+                                   <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedSale(sale)}>
+                                     <Eye className="h-4 w-4" />
+                                   </Button>
+                               </Dialog.Trigger>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                          لا توجد فواتير مبيعات تطابق الفلاتر المحددة.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+               {/* Add Pagination if needed */}
+            </CardContent>
+          </Card>
+
+           {/* Full Sale Details Dialog - Rendered conditionally inside the Dialog provider */}
+            {isSaleDetailsDialogAvailable && selectedSale && (
+                <SaleDetailsDialog
+                    sale={selectedSale}
+                    customerName={selectedSale?.customerId ? customers.get(selectedSale.customerId) : undefined}
+                    onClose={() => setSelectedSale(null)}
+                />
+            )}
+        </div>
+    </Dialog>
   );
 }
 
-// Optional: Define SaleDetailsDialog here if not importing from sales/page.tsx
-// Ensure it's wrapped in appropriate Dialog components if defined locally.
-// Example (minimalistic):
-/*
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog';
-
-interface MinimalSaleDetailsDialogProps {
-    sale: SaleTransaction | null;
-    customerName?: string;
-    onClose: () => void;
-}
-
-function MinimalSaleDetailsDialog({ sale, customerName, onClose }: MinimalSaleDetailsDialogProps) {
-     if (!sale) return null;
-    return (
-        <Dialog open={!!sale} onOpenChange={(open) => !open && onClose()}>
-             <DialogContent>
-                 <DialogHeader>
-                     <DialogTitle>تفاصيل الفاتورة: {sale.id}</DialogTitle>
-                 </DialogHeader>
-                 <div>
-                     <p>العميل: {customerName || 'نقدي'}</p>
-                     <p>الإجمالي: {sale.totalAmount.toFixed(2)}</p>
-                     {/* Add more details */}
-                 </div>
-                 <DialogFooter>
-                    <DialogClose asChild>
-                         <Button variant="outline" onClick={onClose}>إغلاق</Button>
-                    </DialogClose>
-                 </DialogFooter>
-             </DialogContent>
-         </Dialog>
-    );
-}
-// Remember to conditionally render this or the imported one based on isSaleDetailsDialogAvailable
-*/
-
+// Removed the commented-out MinimalSaleDetailsDialog as SaleDetailsDialog is being imported/used
