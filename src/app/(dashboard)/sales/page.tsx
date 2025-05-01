@@ -57,7 +57,8 @@ const getPaymentMethodInfo = (method: PaymentMethod) => {
 };
 
 
-function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogProps) {
+// Export the SaleDetailsDialog component
+export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogProps) {
      const [detailedItems, setDetailedItems] = React.useState<SaleItemWithDetails[]>([]);
      const [isLoadingDetails, setIsLoadingDetails] = React.useState(false);
       const [localOriginalTotal, setLocalOriginalTotal] = React.useState<number>(0);
@@ -100,7 +101,14 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
                 setIsLoadingDetails(false);
             }
         };
-        fetchDetails();
+        if (sale) { // Fetch only if a sale is selected
+            fetchDetails();
+        } else {
+            // Reset state when sale is null
+            setDetailedItems([]);
+            setIsLoadingDetails(false);
+            setLocalOriginalTotal(0);
+        }
     }, [sale]); // Re-fetch when sale changes
 
 
@@ -112,7 +120,7 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
 
     // Basic print function (opens print dialog for the content)
     const handlePrint = () => {
-        const printContent = document.getElementById('sale-details-content-printable');
+        const printContent = document.getElementById(`sale-details-content-printable-${sale.id}`); // Unique ID for print div
         if (printContent) {
              const printWindow = window.open('', '_blank');
              if (printWindow) {
@@ -134,6 +142,7 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
                          `;
                      });
                  }
+                 const remainingAmount = sale.totalAmount - sale.amountPaid;
 
                 printWindow.document.write(`
                  <html>
@@ -188,7 +197,7 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
                          <div><span>الإجمالي الأصلي:</span> ${localOriginalTotal.toFixed(2)} ر.س</div>
                          ${totalDiscount > 0 ? `<div><span>الخصم:</span> ${totalDiscount.toFixed(2)} ر.س</div>` : ''}
                          <div><span>المبلغ المدفوع:</span> ${sale.amountPaid.toFixed(2)} ر.س</div>
-                          ${sale.paymentMethod === 'debt' ? `<div><span>المبلغ المتبقي (آجل):</span> ${(sale.totalAmount - sale.amountPaid).toFixed(2)} ر.س</div>` : ''}
+                          ${remainingAmount > 0 && sale.paymentMethod === 'debt' ? `<div><span>المبلغ المتبقي (آجل):</span> ${remainingAmount.toFixed(2)} ر.س</div>` : ''}
                          <div><strong>الإجمالي النهائي:</strong> <strong>${sale.totalAmount.toFixed(2)} ر.س</strong></div>
                      </div>
                       <button onclick="window.print()">طباعة</button>
@@ -275,7 +284,7 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
                      <span>المبلغ المدفوع:</span>
                      <span className="font-semibold">{sale.amountPaid.toFixed(2)} ر.س</span>
 
-                      {sale.paymentMethod === 'debt' && (
+                      {sale.paymentMethod === 'debt' && (sale.totalAmount - sale.amountPaid) > 0 && (
                            <>
                              <span>المبلغ المتبقي (آجل):</span>
                              <span className="font-semibold text-red-600">{(sale.totalAmount - sale.amountPaid).toFixed(2)} ر.س</span>
@@ -288,8 +297,8 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
                 </div>
             </div>
 
-              {/* Hidden div for printing */}
-            <div id="sale-details-content-printable" style={{ display: 'none' }}>
+              {/* Hidden div for printing with unique ID */}
+            <div id={`sale-details-content-printable-${sale.id}`} style={{ display: 'none' }}>
                  {/* Content is generated dynamically in handlePrint */}
             </div>
 
@@ -349,7 +358,7 @@ export default function SalesPage() {
      (sale.customerId && customers.get(sale.customerId)?.toLowerCase().includes(searchTerm.toLowerCase())) ||
      sale.items.some(item => item.productId.toLowerCase().includes(searchTerm.toLowerCase())) // Simple check on product ID for now
      // TODO: Enhance search to fetch product names if needed for searching item names
-  );
+  ).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Sort by date descending
 
 
   return (
