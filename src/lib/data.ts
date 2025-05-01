@@ -1,3 +1,4 @@
+
 import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User, ProductExpiryInfo, InventoryReportItem, PaymentMethod, PaymentStatus, UserRole } from '@/lib/types';
 import { Pill, Baby, SprayCan, Activity, LucideIcon } from 'lucide-react';
 import { differenceInDays, addDays, isBefore, isSameDay, startOfDay, endOfDay } from 'date-fns';
@@ -176,7 +177,14 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
         if (key === 'categoryIcon') value = getIconName(value as LucideIcon);
 
         // Only add to update if the value has actually changed (optional, but good practice)
-        if (value !== currentProduct[key]) {
+        // Use a loose comparison for dates
+        if (key === 'expiryDate') {
+             if ((value && !currentProduct[key]) || (!value && currentProduct[key]) || (value && currentProduct[key] && value.getTime() !== currentProduct[key]!.getTime())) {
+                 safeUpdates[key] = value;
+                 setClause.push(`${key} = ?`);
+                 params.push(value);
+             }
+         } else if (value !== currentProduct[key]) {
             safeUpdates[key] = value;
             setClause.push(`${key} = ?`);
             params.push(value);
@@ -205,17 +213,33 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
 
 export async function deleteProduct(id: string): Promise<boolean> {
     if (!db) { throw new Error("DB not available in deleteProduct"); }
+    // --- Dependency Check ---
+    // Check Sales
+    const salesCheck = await db.select("SELECT 1 FROM SaleTransactionItems WHERE productId = ? LIMIT 1", [id]);
+    if (salesCheck && salesCheck.length > 0) {
+        console.warn(`Cannot delete product ${id}: Used in sales transactions.`);
+        // Consider throwing a specific error or returning a status code
+        throw new Error(`لا يمكن حذف المنتج لأنه مرتبط بفواتير بيع.`);
+        // return false;
+    }
+    // Check Purchases
+    const purchasesCheck = await db.select("SELECT 1 FROM PurchaseTransactionItems WHERE productId = ? LIMIT 1", [id]);
+    if (purchasesCheck && purchasesCheck.length > 0) {
+         console.warn(`Cannot delete product ${id}: Used in purchase transactions.`);
+        throw new Error(`لا يمكن حذف المنتج لأنه مرتبط بفواتير شراء.`);
+        // return false;
+    }
+    // --- End Dependency Check ---
+
     const query = "DELETE FROM Products WHERE id = ?";
     try {
-        // Check dependencies first (e.g., if product is in sales/purchases) - requires more logic
         const result = await db.execute(query, [id]);
         const success = result.affectedRows > 0;
         console.log(`Deleted Product ${id}? (DB)`, success);
         return success;
     } catch (error) {
         console.error(`Error deleting product ${id}:`, error);
-        // Check for foreign key constraint errors etc.
-        throw error;
+        throw error; // Re-throw database errors
     }
 }
 
@@ -284,9 +308,16 @@ export async function updateSupplier(id: string, updates: Partial<Supplier>): Pr
 
 export async function deleteSupplier(id: string): Promise<boolean> {
      if (!db) { throw new Error("DB not available in deleteSupplier"); }
+    // Dependency Check: Check if supplier is linked to any purchases
+    const purchasesCheck = await db.select("SELECT 1 FROM PurchaseTransactions WHERE supplierId = ? LIMIT 1", [id]);
+    if (purchasesCheck && purchasesCheck.length > 0) {
+        console.warn(`Cannot delete supplier ${id}: Linked to purchase transactions.`);
+        throw new Error(`لا يمكن حذف المورد لأنه مرتبط بفواتير شراء.`);
+        // return false;
+    }
+
     const query = "DELETE FROM Suppliers WHERE id = ?";
     try {
-        // Add checks for dependencies (e.g., existing purchase transactions)
         const result = await db.execute(query, [id]);
         const success = result.affectedRows > 0;
         console.log(`Deleted Supplier ${id}? (DB)`, success);
@@ -391,9 +422,16 @@ export async function updateCustomer(id: string, updates: Partial<Customer>): Pr
 
 export async function deleteCustomer(id: string): Promise<boolean> {
     if (!db) { throw new Error("DB not available in deleteCustomer"); }
+    // Dependency Check: Check if customer has sales transactions
+    const salesCheck = await db.select("SELECT 1 FROM SalesTransactions WHERE customerId = ? LIMIT 1", [id]);
+    if (salesCheck && salesCheck.length > 0) {
+        console.warn(`Cannot delete customer ${id}: Linked to sales transactions.`);
+        throw new Error(`لا يمكن حذف العميل لأنه مرتبط بفواتير بيع.`);
+        // return false;
+    }
+
     const query = "DELETE FROM Customers WHERE id = ?";
     try {
-         // Add checks for dependencies (e.g., existing sales transactions)
         const result = await db.execute(query, [id]);
         const success = result.affectedRows > 0;
         console.log(`Deleted Customer ${id}? (DB)`, success);
@@ -679,14 +717,30 @@ export async function getUsers(): Promise<User[]> {
     }
 }
 
+// Function to fetch a user by email for login purposes (WITHOUT password)
+export async function getUserForLogin(email: string): Promise<User | undefined> {
+    if (!db) { console.error("DB not available in getUserForLogin"); return undefined; }
+    try {
+        const results = await db.select("SELECT id, name, email, role FROM Users WHERE email = ?", [email]);
+        if (results && results.length > 0) {
+            return results[0] as User;
+        }
+        return undefined;
+    } catch (error) {
+        console.error(`Error fetching user by email ${email}:`, error);
+        throw error;
+    }
+}
+
+
 export async function addUser(userData: Omit<User, 'id'>): Promise<User> {
     if (!db) { throw new Error("DB not available in addUser"); }
     const newId = `user-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
     // **IMPORTANT**: Password hashing should happen here before saving!
     // const hashedPassword = await hashPassword(userData.password); // Replace with your hashing logic
     const query = `
-        INSERT INTO Users (id, name, email, role) -- Add passwordHash column
-        VALUES (?, ?, ?, ?) -- Add hashedPassword param
+        INSERT INTO Users (id, name, email, role) -- Add passwordHash column if needed
+        VALUES (?, ?, ?, ?) -- Add hashedPassword param if needed
     `;
     const params = [newId, userData.name, userData.email, userData.role];
     try {
@@ -702,7 +756,7 @@ export async function addUser(userData: Omit<User, 'id'>): Promise<User> {
 
 export async function updateUser(id: string, updates: Partial<User>): Promise<User | null> {
     if (!db) { throw new Error("DB not available in updateUser"); }
-    const currentUser = (await db.select("SELECT * FROM Users WHERE id = ?", [id]))?.[0];
+    const currentUser = (await db.select("SELECT id, name, email, role FROM Users WHERE id = ?", [id]))?.[0] as User | undefined;
     if (!currentUser) return null;
 
     const { id: _, ...safeUpdates } = updates; // Prevent changing ID
@@ -727,6 +781,15 @@ export async function updateUser(id: string, updates: Partial<User>): Promise<Us
 
 export async function deleteUser(id: string): Promise<boolean> {
     if (!db) { throw new Error("DB not available in deleteUser"); }
+     // --- Dependency Check (Optional but recommended) ---
+     // Check if user is linked to sales/purchases or other critical data
+     // Example:
+     // const salesCheck = await db.select("SELECT 1 FROM SalesTransactions WHERE createdByUserId = ? LIMIT 1", [id]);
+     // if (salesCheck && salesCheck.length > 0) {
+     //     throw new Error(`لا يمكن حذف المستخدم لأنه مرتبط بعمليات بيع.`);
+     // }
+     // --- End Dependency Check ---
+
     const query = "DELETE FROM Users WHERE id = ?";
     try {
         const result = await db.execute(query, [id]);
@@ -832,10 +895,10 @@ export async function getInventoryReportData(): Promise<InventoryReportItem[]> {
     if (!db) { console.error("DB not available in getInventoryReportData"); return []; }
      const query = `
         SELECT
-            id, nameAr, nameEn, barcode, quantity, price, expiryDate, unitType, lastPurchaseCost,
-            (quantity * COALESCE(lastPurchaseCost, 0)) AS inventoryValue
-        FROM Products
-    `;
+            p.id, p.nameAr, p.nameEn, p.barcode, p.quantity, p.price, p.expiryDate, p.unitType, p.lastPurchaseCost,
+            (p.quantity * COALESCE(p.lastPurchaseCost, 0)) AS inventoryValue
+        FROM Products p
+    `; // Explicitly alias table
     try {
         const results = await db.select(query, []);
         return (results as any[]).map(item => ({

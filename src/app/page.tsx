@@ -1,17 +1,12 @@
-"use client";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-
+// This page might not even be rendered if middleware redirects correctly.
+// Keep it simple or show a basic loading/welcome message if needed.
 export default function HomePage() {
-  const router = useRouter();
-
-  useEffect(() => {
-    // Redirect immediately to the main dashboard or POS page
-    router.replace('/pos'); // Or '/dashboard' if you create a separate dashboard overview page
-  }, [router]);
-
-  // Optional: Render a loading state or nothing while redirecting
-  return null;
-  // Or: return <p>Loading...</p>;
+  // Middleware should handle the redirection based on auth status.
+  // No client-side redirection logic needed here anymore.
+  return (
+      <div className="flex min-h-screen items-center justify-center">
+          <p>Loading...</p> {/* Or a welcome message */}
+      </div>
+  );
 }
