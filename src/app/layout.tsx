@@ -16,7 +16,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // Ensure no extra whitespace between html tag and body tag to prevent hydration errors
     <html lang="ar" dir="rtl">
+      {/* Next.js implicitly handles the <head> tag and its contents */}
       <body className={inter.className}> {/* Use Inter font class */}
         {children}
          <Toaster /> {/* Place Toaster inside body */}
