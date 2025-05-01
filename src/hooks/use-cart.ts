@@ -1,3 +1,4 @@
+
 import type { CartItem, Product } from '@/lib/types';
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
@@ -8,12 +9,22 @@ interface CartState {
   removeItem: (productId: string, selectedUnitType: 'main' | 'sub') => void; // Need unit type to identify item
   updateItemQuantity: (productId: string, selectedUnitType: 'main' | 'sub', quantity: number) => void;
   clearCart: () => void;
-  getTotalPrice: () => number;
+  getTotalPrice: () => number; // Total price *after* discounts
+  getOriginalTotalPrice: () => number; // Total price *before* discounts
   getItemCount: () => number; // Total number of *individual pieces* (sub-units or main units)
 }
 
-// Helper to calculate price per sub-unit
-const calculateSubUnitPrice = (product: Product): number => {
+// Helper to apply discount
+const applyDiscount = (price: number, discountRate?: number): number => {
+    if (discountRate && discountRate > 0 && discountRate <= 100) {
+        return price * (1 - discountRate / 100);
+    }
+    return price;
+};
+
+
+// Helper to calculate price per sub-unit (before discount)
+const calculateOriginalSubUnitPrice = (product: Product): number => {
     if (product.subUnitsPerUnit && product.subUnitsPerUnit > 0) {
         return product.price / product.subUnitsPerUnit;
     }
@@ -39,7 +50,11 @@ export const useCart = create<CartState>()(
         set((state) => {
           const isSubUnit = unitType === 'sub' && !!product.subUnitType && !!product.subUnitsPerUnit;
           const selectedUnitType = isSubUnit ? 'sub' : 'main';
-          const pricePerSelectedUnit = isSubUnit ? calculateSubUnitPrice(product) : product.price;
+           // Calculate original price based on selected unit
+          const originalPricePerSelectedUnit = isSubUnit ? calculateOriginalSubUnitPrice(product) : product.price;
+          // Calculate price *after* applying discount
+           const discountedPricePerSelectedUnit = applyDiscount(originalPricePerSelectedUnit, product.discountRate);
+
           const availableStockInSelectedUnit = getAvailableQuantity(product, selectedUnitType);
 
           const existingItemIndex = state.items.findIndex(
@@ -62,7 +77,8 @@ export const useCart = create<CartState>()(
                   ...product,
                   cartQuantity: newQuantity,
                   selectedUnitType: selectedUnitType,
-                  pricePerSelectedUnit: pricePerSelectedUnit,
+                  // Store the price *after* discount for this item in the cart
+                  pricePerSelectedUnit: discountedPricePerSelectedUnit,
                 });
              }
           }
@@ -93,20 +109,30 @@ export const useCart = create<CartState>()(
              // Update quantity, ensuring it doesn't exceed available stock
               itemsCopy[itemIndex] = {
                   ...currentItem,
+                  // Note: pricePerSelectedUnit remains the discounted price
                   cartQuantity: Math.min(quantity, availableStockInSelectedUnit)
               };
           }
            return { items: itemsCopy };
         }),
       clearCart: () => set({ items: [] }),
-      getTotalPrice: () =>
-        get().items.reduce((total, item) => total + item.pricePerSelectedUnit * item.cartQuantity, 0),
+       // getTotalPrice now reflects the total *after* discounts
+       getTotalPrice: () =>
+         get().items.reduce((total, item) => total + item.pricePerSelectedUnit * item.cartQuantity, 0),
+        // New function to get original total (before discount)
+        getOriginalTotalPrice: () =>
+            get().items.reduce((total, item) => {
+                const originalPrice = item.selectedUnitType === 'sub'
+                    ? calculateOriginalSubUnitPrice(item)
+                    : item.price;
+                return total + originalPrice * item.cartQuantity;
+            }, 0),
        // Returns the total count of individual items added (sum of cartQuantity for each line item)
       getItemCount: () =>
          get().items.reduce((total, item) => total + item.cartQuantity, 0),
     }),
     {
-      name: 'pharmacy-cart-storage-v2', // Updated storage name due to structure change
+      name: 'pharmacy-cart-storage-v3', // Updated storage name due to discount logic
       storage: createJSONStorage(() => localStorage), // use localStorage
     }
   )

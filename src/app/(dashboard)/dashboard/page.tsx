@@ -2,15 +2,17 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link'; // Import Link
+import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { DollarSign, Users, Package, ShoppingCart, Truck, AlertTriangle, Pill, Baby, SprayCan, Activity } from 'lucide-react'; // Added product category icons
-import { getProducts, getSuppliers, getCustomers, getSales, getPurchases, getProductById } from '@/lib/data'; // Import data functions
+import { DollarSign, Users, Package, ShoppingCart, Truck, AlertTriangle, Pill, Baby, SprayCan, Activity, CalendarClock, CalendarX, MinusCircle } from 'lucide-react'; // Added expiry/stock icons
+import { getProducts, getSuppliers, getCustomers, getSales, getPurchases, getProductById, getProductsNearingExpiry, getExpiredProducts } from '@/lib/data'; // Import data functions including expiry checks
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
-import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
-import { Button } from '@/components/ui/button'; // Import Button for link
-import type { Product, SaleTransactionItem } from '@/lib/types'; // Import Product type
+import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import type { Product, SaleTransactionItem, ProductExpiryInfo } from '@/lib/types';
+import { format } from 'date-fns';
+import { arSA } from 'date-fns/locale';
 
 // Define a simple type for dashboard stats
 type DashboardStat = {
@@ -32,24 +34,20 @@ interface LowStockProduct {
     id: string;
     nameAr: string;
     quantity: number;
+    minStockLevel?: number; // Include min level for context
 }
 
 // Helper to get icon name from component
 function getIconName(IconComponent?: React.ComponentType<any>): string {
     if (!IconComponent) return 'Unknown';
-    // Attempt to get name from component itself (less reliable for minified/prod builds)
     if (IconComponent === Pill) return 'Pill';
     if (IconComponent === Baby) return 'Baby';
     if (IconComponent === SprayCan) return 'SprayCan';
     if (IconComponent === Activity) return 'Activity';
-
-    // Fallback for other Lucide icons if needed, checking the function name might work sometimes
     const nameMatch = IconComponent.toString().match(/function\s*([^\s(]+)/);
      if (nameMatch && nameMatch[1]) return nameMatch[1];
-
     return 'Unknown';
 }
-
 
 // Mapping from icon name (or component name) to Arabic label
 const categoryLabels: { [key: string]: string } = {
@@ -65,30 +63,34 @@ export default function DashboardOverviewPage() {
   const [stats, setStats] = React.useState<DashboardStat[]>([]);
   const [categorySalesData, setCategorySalesData] = React.useState<CategorySalesData[]>([]);
   const [lowStockProducts, setLowStockProducts] = React.useState<LowStockProduct[]>([]);
+  const [expiringSoonProducts, setExpiringSoonProducts] = React.useState<ProductExpiryInfo[]>([]);
+  const [expiredProducts, setExpiredProducts] = React.useState<ProductExpiryInfo[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
 
   const COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
-
+  const NEAR_EXPIRY_DAYS = 60; // Alert for products expiring within 60 days
 
   React.useEffect(() => {
     async function loadDashboardData() {
       setIsLoading(true);
       try {
-        const [products, suppliers, customers, sales, purchases] = await Promise.all([
+        const [products, suppliers, customers, sales, purchases, nearingExpiry, expired] = await Promise.all([
           getProducts(),
           getSuppliers(),
           getCustomers(),
-          getSales(), // Using actual data now
-          getPurchases(), // Using actual data now
+          getSales(),
+          getPurchases(),
+          getProductsNearingExpiry(NEAR_EXPIRY_DAYS), // Fetch products expiring soon
+          getExpiredProducts(), // Fetch expired products
         ]);
 
         // --- Calculate Stats ---
         const totalSalesValue = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
-        const totalPurchaseValue = purchases.reduce((sum, purchase) => sum + purchase.totalAmount, 0); // Calculate actual purchase value
+        const totalPurchaseValue = purchases.reduce((sum, purchase) => sum + purchase.totalAmount, 0);
 
         const loadedStats: DashboardStat[] = [
           { title: 'إجمالي المبيعات', value: `${totalSalesValue.toFixed(2)} ر.س`, icon: DollarSign, description: `من ${sales.length} فاتورة` },
-          { title: 'إجمالي المشتريات', value: `${totalPurchaseValue.toFixed(2)} ر.س`, icon: Truck, description: `من ${purchases.length} فاتورة` }, // Updated purchase description
+          { title: 'إجمالي المشتريات', value: `${totalPurchaseValue.toFixed(2)} ر.س`, icon: Truck, description: `من ${purchases.length} فاتورة` },
           { title: 'عدد المنتجات', value: products.length, icon: Package, description: 'الأصناف المتوفرة' },
           { title: 'عدد العملاء', value: customers.length, icon: Users, description: 'العملاء المسجلون' },
           { title: 'عدد الموردين', value: suppliers.length, icon: ShoppingCart, description: 'الموردون المسجلون' },
@@ -97,7 +99,6 @@ export default function DashboardOverviewPage() {
 
          // --- Calculate Category Sales ---
          const salesByCategory: { [key: string]: { totalSales: number, label: string } } = {};
-         // Fetch all product details concurrently for efficiency
           const productDetailsPromises = Array.from(new Set(sales.flatMap(s => s.items.map(i => i.productId))))
               .map(id => getProductById(id));
           const productDetailsResults = await Promise.all(productDetailsPromises);
@@ -105,12 +106,11 @@ export default function DashboardOverviewPage() {
              productDetailsResults.map(p => [p?.id || 'unknown', p])
          );
 
-
          sales.forEach(sale => {
              sale.items.forEach((item: SaleTransactionItem) => {
                  const product = productMap.get(item.productId);
                  const categoryKey = product ? getIconName(product.categoryIcon) : 'Unknown';
-                 const categoryLabel = categoryLabels[categoryKey] || categoryKey; // Get Arabic label
+                 const categoryLabel = categoryLabels[categoryKey] || categoryKey;
                  const amount = item.price * item.quantity;
 
                  if (!salesByCategory[categoryKey]) {
@@ -122,25 +122,25 @@ export default function DashboardOverviewPage() {
 
         const categoryData: CategorySalesData[] = Object.entries(salesByCategory)
             .map(([name, data], index) => ({
-                name: name, // Keep the internal key/name
-                label: data.label, // Use the Arabic label for display
+                name: name,
+                label: data.label,
                 totalSales: data.totalSales,
                 fill: COLORS[index % COLORS.length],
             }))
-            .sort((a, b) => b.totalSales - a.totalSales) // Sort descending
-            .slice(0, 5); // Take top 5 categories
+            .sort((a, b) => b.totalSales - a.totalSales)
+            .slice(0, 5);
 
         setCategorySalesData(categoryData);
 
-
         // --- Find Low Stock Products ---
-         const LOW_STOCK_THRESHOLD = 10; // Example threshold
          const lowStock = products
-            .filter(p => p.quantity <= LOW_STOCK_THRESHOLD)
-            .sort((a,b) => a.quantity - b.quantity) // Sort by lowest quantity first
-            .map(p => ({ id: p.id, nameAr: p.nameAr, quantity: p.quantity }));
-        setLowStockProducts(lowStock);
+             .filter(p => p.minStockLevel !== undefined && p.quantity <= p.minStockLevel) // Check against minStockLevel
+             .sort((a, b) => a.quantity - b.quantity) // Sort by lowest quantity first
+             .map(p => ({ id: p.id, nameAr: p.nameAr, quantity: p.quantity, minStockLevel: p.minStockLevel }));
+         setLowStockProducts(lowStock);
 
+         setExpiringSoonProducts(nearingExpiry);
+         setExpiredProducts(expired);
 
       } catch (error) {
         console.error("Failed to load dashboard data:", error);
@@ -150,21 +150,80 @@ export default function DashboardOverviewPage() {
       }
     }
     loadDashboardData();
-  }, []); // End of useEffect
+  }, []);
 
-   // Define chartConfig within the component scope, after state hooks
     const chartConfig = React.useMemo(() => {
-      // Build the config object iteratively
-      const config: ChartConfig = {
-          totalSales: { label: "إجمالي المبيعات (ر.س)" } // Start with the base config
-      };
+      const config: ChartConfig = { totalSales: { label: "إجمالي المبيعات (ر.س)" } };
       categorySalesData.forEach(cur => {
           config[cur.name] = { label: cur.label, color: cur.fill };
       });
       return config;
-   }, [categorySalesData]); // End of useMemo
+   }, [categorySalesData]);
 
-   // Ensure syntax is correct before the return statement
+    // Helper component for alert lists
+    const AlertList = ({ title, description, icon: Icon, items, itemKey, itemValueKey, itemDateKey, linkPrefix, emptyMessage, isLoading, alertType }: {
+        title: string;
+        description?: string;
+        icon: React.ElementType;
+        items: any[]; // Use specific types like LowStockProduct or ProductExpiryInfo if possible
+        itemKey: string; // e.g., 'id'
+        itemValueKey: string; // e.g., 'quantity' or 'daysUntilExpiry'
+        itemDateKey?: string; // e.g., 'expiryDate'
+        linkPrefix: string;
+        emptyMessage: string;
+        isLoading: boolean;
+        alertType: 'lowStock' | 'expiringSoon' | 'expired';
+    }) => (
+        <Card className="flex flex-col">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <Icon className={`h-5 w-5 ${alertType === 'expired' ? 'text-red-700' : alertType === 'lowStock' ? 'text-amber-600' : 'text-orange-500'}`} />
+                    {title}
+                </CardTitle>
+                {description && <CardDescription>{description}</CardDescription>}
+            </CardHeader>
+            <CardContent className="flex-1 flex flex-col">
+                {isLoading ? (
+                    <div className="space-y-2 flex-1">
+                        <Skeleton className="h-8 w-full" />
+                        <Skeleton className="h-8 w-full" />
+                        <Skeleton className="h-8 w-full" />
+                    </div>
+                ) : items.length > 0 ? (
+                    <>
+                        <div className="flex-1 overflow-y-auto max-h-[200px]">
+                            <ul className="space-y-2 text-sm pr-2">
+                                {items.map((item) => (
+                                    <li key={item[itemKey]} className="flex justify-between items-center border-b pb-1.5 gap-2">
+                                        <Link href={`${linkPrefix}?search=${item[itemKey]}`} className="hover:underline hover:text-primary truncate pr-2 flex-1">
+                                            {item.nameAr}
+                                        </Link>
+                                        <span className={`font-semibold whitespace-nowrap ${alertType === 'expired' ? 'text-red-700' : alertType === 'lowStock' ? 'text-amber-600' : 'text-orange-500'}`}>
+                                            {alertType === 'lowStock' && `${item[itemValueKey]} (الحد: ${item.minStockLevel ?? '-'})`}
+                                            {alertType === 'expiringSoon' && `خلال ${item[itemValueKey]} يوم`}
+                                            {alertType === 'expired' && `منذ ${Math.abs(item[itemValueKey])} يوم`}
+                                        </span>
+                                         {itemDateKey && item[itemDateKey] && (
+                                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                                {format(new Date(item[itemDateKey]), 'dd/MM/yyyy', { locale: arSA })}
+                                            </span>
+                                        )}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                        <Button variant="outline" size="sm" className="mt-4 self-start" asChild>
+                            <Link href={linkPrefix}>عرض الكل</Link>
+                        </Button>
+                    </>
+                ) : (
+                    <p className="text-muted-foreground text-center py-10 flex-1 flex items-center justify-center">{emptyMessage}</p>
+                )}
+            </CardContent>
+        </Card>
+    );
+
+
    return (
      <div className="p-4 md:p-6 space-y-6">
        <h2 className="text-2xl font-semibold">لوحة التحكم الرئيسية</h2>
@@ -207,7 +266,7 @@ export default function DashboardOverviewPage() {
        </div>
 
 
-     {/* Charts and Other Sections */}
+     {/* Charts and Alert Sections */}
      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Category Sales Chart */}
         <Card className="flex flex-col">
@@ -215,7 +274,7 @@ export default function DashboardOverviewPage() {
             <CardTitle>المبيعات حسب الفئة (أعلى 5)</CardTitle>
             <CardDescription>توزيع إجمالي المبيعات على فئات المنتجات.</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 pb-0"> {/* Allow chart to fill space */}
+          <CardContent className="flex-1 pb-0">
             {isLoading ? (
                 <div className="flex justify-center items-center h-full">
                     <Skeleton className="w-48 h-48 rounded-full" />
@@ -228,7 +287,7 @@ export default function DashboardOverviewPage() {
                           <Pie
                               data={categorySalesData}
                               dataKey="totalSales"
-                              nameKey="label" // Use Arabic label here
+                              nameKey="label"
                               cx="50%"
                               cy="50%"
                               outerRadius={100}
@@ -247,46 +306,54 @@ export default function DashboardOverviewPage() {
                 <p className="text-muted-foreground text-center py-10 flex-1 flex items-center justify-center">لا توجد بيانات مبيعات لعرضها.</p>
              )}
           </CardContent>
-           {/* Optional: Add legend or total below chart if needed */}
-           {/* <CardFooter className="flex-col gap-2 text-sm"> ... </CardFooter> */}
         </Card>
 
-         {/* Low Stock Products */}
-         <Card className="flex flex-col">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-destructive"/> أصناف قاربت على النفاد</CardTitle>
-            <CardDescription>المنتجات التي كميتها أقل من أو تساوي {10}.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex-1 flex flex-col"> {/* Use flex-col */}
-            {isLoading ? (
-               <div className="space-y-2 flex-1"> {/* Allow skeleton to take space */}
-                   <Skeleton className="h-8 w-full" />
-                   <Skeleton className="h-8 w-full" />
-                   <Skeleton className="h-8 w-full" />
-               </div>
-           ) : lowStockProducts.length > 0 ? (
-                <><div className="flex-1 overflow-y-auto max-h-[240px]"> {/* Scrollable content */}
-                   <ul className="space-y-2 text-sm pr-2">
-                     {lowStockProducts.map((product) => (
-                       <li key={product.id} className="flex justify-between items-center border-b pb-1.5">
-                         <Link href={`/products?search=${product.id}`} className="hover:underline hover:text-primary truncate pr-2"> {/* Link to products page */}
-                           {product.nameAr}
-                         </Link>
-                         <span className={`font-semibold whitespace-nowrap ${product.quantity <= 5 ? 'text-destructive' : 'text-amber-600'}`}>
-                           {product.quantity}
-                         </span>
-                       </li>
-                     ))}
-                   </ul>
-                 </div><Button variant="outline" size="sm" className="mt-4 self-start" asChild>
-                     <Link href="/products">عرض كل المنتجات</Link>
-                   </Button></>
-           ) : (
-               <p className="text-muted-foreground text-center py-10 flex-1 flex items-center justify-center">لا توجد منتجات بقرب النفاد.</p>
-            )}
-          </CardContent>
-        </Card>
+        {/* Low Stock Products */}
+         <AlertList
+            title="أصناف قاربت على النفاد"
+            description={`المنتجات التي كميتها أقل من أو تساوي حدها الأدنى.`}
+            icon={MinusCircle}
+            items={lowStockProducts}
+            itemKey="id"
+            itemValueKey="quantity"
+            linkPrefix="/products"
+            emptyMessage="لا توجد منتجات بقرب النفاد."
+            isLoading={isLoading}
+            alertType="lowStock"
+        />
+    </div>
+
+      {/* Expiry Alerts */}
+     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+         {/* Expiring Soon Products */}
+         <AlertList
+            title={`منتجات قاربت على الانتهاء (خلال ${NEAR_EXPIRY_DAYS} يوم)`}
+            icon={CalendarClock}
+            items={expiringSoonProducts}
+            itemKey="id"
+            itemValueKey="daysUntilExpiry"
+            itemDateKey="expiryDate"
+            linkPrefix="/products"
+            emptyMessage={`لا توجد منتجات ستنتهي خلال ${NEAR_EXPIRY_DAYS} يوم.`}
+            isLoading={isLoading}
+            alertType="expiringSoon"
+        />
+
+         {/* Expired Products */}
+          <AlertList
+            title="منتجات منتهية الصلاحية"
+            icon={CalendarX}
+            items={expiredProducts}
+            itemKey="id"
+            itemValueKey="daysUntilExpiry"
+             itemDateKey="expiryDate"
+            linkPrefix="/products"
+            emptyMessage="لا توجد منتجات منتهية الصلاحية."
+            isLoading={isLoading}
+            alertType="expired"
+        />
      </div>
    </div>
  );
 }
+

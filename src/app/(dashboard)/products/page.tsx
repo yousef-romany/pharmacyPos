@@ -45,9 +45,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity, Barcode, Boxes } from 'lucide-react'; // Added Boxes
+import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity, Barcode, Boxes, Percent, Calendar, AlertCircle, BadgePercent } from 'lucide-react'; // Added relevant icons
 import type { Product } from '@/lib/types';
-import { getProducts, addProduct, updateProduct, deleteProduct } from '@/lib/data'; // Import CRUD functions
+import { getProducts, addProduct, updateProduct, deleteProduct, calculateDaysUntilExpiry } from '@/lib/data'; // Import CRUD functions and expiry helper
+import { DatePicker } from '@/components/ui/date-picker'; // Import DatePicker
+import { format } from 'date-fns'; // Import format function
+import { arSA } from 'date-fns/locale'; // Import Arabic locale
+import { cn } from '@/lib/utils'; // Import cn for conditional classes
 
 // --- Product Form ---
 interface ProductFormProps {
@@ -57,19 +61,22 @@ interface ProductFormProps {
 }
 
 function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
-   // Initialize state including new unit fields
   const [formData, setFormData] = React.useState<Omit<Product, 'id' | 'categoryIcon'> & { categoryIconName?: string }>({
     nameAr: initialData?.nameAr || '',
     nameEn: initialData?.nameEn || '',
-    price: initialData?.price || 0, // Price for main unit
-    quantity: initialData?.quantity || 0, // Quantity of main unit
+    price: initialData?.price || 0,
+    quantity: initialData?.quantity || 0,
     barcode: initialData?.barcode || '',
     categoryIconName: getIconName(initialData?.categoryIcon) || 'Pill',
-    unitType: initialData?.unitType || 'قطعة', // e.g., 'علبة'
-    subUnitType: initialData?.subUnitType || '', // e.g., 'شريط'
-    subUnitsPerUnit: initialData?.subUnitsPerUnit || undefined, // e.g., 2
+    unitType: initialData?.unitType || 'قطعة',
+    subUnitType: initialData?.subUnitType || '',
+    subUnitsPerUnit: initialData?.subUnitsPerUnit || undefined,
+    discountRate: initialData?.discountRate || undefined, // Initialize discountRate
+    expiryDate: initialData?.expiryDate ? new Date(initialData.expiryDate) : undefined, // Initialize expiryDate
+    minStockLevel: initialData?.minStockLevel || undefined, // Initialize minStockLevel
   });
   const [isLoading, setIsLoading] = React.useState(false);
+   const { toast } = useToast(); // Moved toast hook here
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -78,23 +85,46 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
        [name]: name === 'price' ? parseFloat(value) || 0
              : name === 'quantity' ? parseFloat(value) || 0 // Allow float for quantity
              : name === 'subUnitsPerUnit' ? parseInt(value) || undefined
+             : name === 'discountRate' ? parseFloat(value) || undefined // Parse discount
+             : name === 'minStockLevel' ? parseInt(value) || undefined // Parse min stock
              : value,
     }));
   };
+
+   const handleDateChange = (date: Date | undefined) => {
+     setFormData((prev) => ({ ...prev, expiryDate: date }));
+   };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     try {
       const categoryIcon = getIconComponent(formData.categoryIconName);
-       // Prepare data, ensuring subUnitType is cleared if subUnitsPerUnit is not set
-       const dataToSend = { ...formData };
-       if (!dataToSend.subUnitsPerUnit || dataToSend.subUnitsPerUnit <= 0) {
-           dataToSend.subUnitType = ''; // Clear sub-unit type if count is invalid/missing
-           dataToSend.subUnitsPerUnit = undefined;
+
+       // Basic validation before submitting
+       if (formData.discountRate !== undefined && (formData.discountRate < 0 || formData.discountRate > 100)) {
+         toast({ title: "خطأ", description: "نسبة الخصم يجب أن تكون بين 0 و 100.", variant: "destructive" });
+         setIsLoading(false);
+         return;
        }
+       if (formData.minStockLevel !== undefined && formData.minStockLevel < 0) {
+         toast({ title: "خطأ", description: "الحد الأدنى للمخزون لا يمكن أن يكون سالباً.", variant: "destructive" });
+         setIsLoading(false);
+         return;
+       }
+       if (formData.subUnitsPerUnit !== undefined && formData.subUnitsPerUnit <= 0) {
+          formData.subUnitType = ''; // Clear sub-unit type if count is invalid/missing
+          formData.subUnitsPerUnit = undefined;
+       } else if (formData.subUnitsPerUnit && !formData.subUnitType) {
+            toast({ title: "خطأ", description: "يجب إدخال اسم الوحدة الفرعية عند تحديد عددها.", variant: "destructive" });
+            setIsLoading(false);
+            return;
+       }
+
+
         // Remove the temporary categoryIconName
-        const { categoryIconName, ...finalData } = dataToSend;
+        const { categoryIconName, ...finalData } = formData;
 
       const productData: Omit<Product, 'id'> | Product = initialData
         ? { ...initialData, ...finalData, categoryIcon }
@@ -133,24 +163,23 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
       { name: 'SprayCan', label: 'بخاخ/شراب', Icon: SprayCan },
       { name: 'Activity', label: 'مكملات/فيتامينات', Icon: Activity },
     ];
-     const { toast } = useToast();
 
 
   return (
-     // Increased max-width for the form
     <form onSubmit={handleSubmit} className="space-y-4">
+       {/* Main Product Details */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-             <Label htmlFor="nameAr">الاسم (عربي)</Label>
+             <Label htmlFor="nameAr">الاسم (عربي) <span className="text-destructive">*</span></Label>
              <Input id="nameAr" name="nameAr" value={formData.nameAr} onChange={handleChange} required />
           </div>
           <div>
-             <Label htmlFor="nameEn">الاسم (إنجليزي)</Label>
+             <Label htmlFor="nameEn">الاسم (إنجليزي) <span className="text-destructive">*</span></Label>
              <Input id="nameEn" name="nameEn" value={formData.nameEn} onChange={handleChange} required />
           </div>
           <div>
             <Label htmlFor="barcode">الباركود</Label>
-            <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleChange} />
+            <Input id="barcode" name="barcode" value={formData.barcode || ''} onChange={handleChange} />
           </div>
           <div>
              <Label htmlFor="categoryIconName">أيقونة الفئة</Label>
@@ -168,18 +197,21 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
              </select>
           </div>
             <div>
-                <Label htmlFor="unitType">الوحدة الرئيسية</Label>
-                <Input id="unitType" name="unitType" placeholder="مثل: علبة, زجاجة, حبة..." value={formData.unitType} onChange={handleChange} required />
+                <Label htmlFor="unitType">الوحدة الرئيسية <span className="text-destructive">*</span></Label>
+                <Input id="unitType" name="unitType" placeholder="مثل: علبة, زجاجة..." value={formData.unitType} onChange={handleChange} required />
             </div>
              <div>
-                <Label htmlFor="price">سعر الوحدة الرئيسية (ر.س)</Label>
+                <Label htmlFor="price">سعر الوحدة الرئيسية (ر.س) <span className="text-destructive">*</span></Label>
                 <Input id="price" name="price" type="number" step="0.01" min="0" value={formData.price} onChange={handleChange} required />
             </div>
              <div>
-                <Label htmlFor="quantity">كمية الوحدة الرئيسية</Label>
+                <Label htmlFor="quantity">كمية الوحدة الرئيسية <span className="text-destructive">*</span></Label>
                 <Input id="quantity" name="quantity" type="number" step="any" min="0" value={formData.quantity} onChange={handleChange} required />
             </div>
-            <div> {/* Placeholder to balance grid or add another field */} </div>
+            <div>
+                <Label htmlFor="minStockLevel">حد أدنى للمخزون (تنبيه)</Label>
+                <Input id="minStockLevel" name="minStockLevel" type="number" min="0" step="1" placeholder="مثال: 10" value={formData.minStockLevel || ''} onChange={handleChange} />
+            </div>
 
       </div>
 
@@ -189,7 +221,7 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  <div>
                     <Label htmlFor="subUnitType">الوحدة الفرعية</Label>
-                    <Input id="subUnitType" name="subUnitType" placeholder="مثل: شريط, حبة..." value={formData.subUnitType} onChange={handleChange} />
+                    <Input id="subUnitType" name="subUnitType" placeholder="مثل: شريط, حبة..." value={formData.subUnitType || ''} onChange={handleChange} />
                  </div>
                  <div>
                     <Label htmlFor="subUnitsPerUnit">عدد الوحدات الفرعية / الرئيسية</Label>
@@ -199,6 +231,25 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
              <p className="text-xs text-muted-foreground">
                 إذا كان المنتج يباع بوحدة أصغر (مثل شريط داخل علبة)، أدخل اسم الوحدة الفرعية وعددها داخل الوحدة الرئيسية.
              </p>
+        </div>
+
+        {/* Expiry and Discount Section */}
+        <div className="border-t pt-4 mt-4 space-y-4">
+            <h4 className="text-md font-medium text-muted-foreground">الصلاحية والخصم</h4>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <div>
+                    <Label htmlFor="expiryDate">تاريخ انتهاء الصلاحية</Label>
+                     <DatePicker
+                        date={formData.expiryDate}
+                        setDate={handleDateChange}
+                        buttonClassName="w-full justify-start text-left font-normal mt-1" // Style date picker button
+                    />
+                 </div>
+                 <div>
+                    <Label htmlFor="discountRate">نسبة الخصم (%)</Label>
+                     <Input id="discountRate" name="discountRate" type="number" min="0" max="100" step="0.01" placeholder="مثال: 5" value={formData.discountRate || ''} onChange={handleChange} />
+                 </div>
+            </div>
         </div>
 
 
@@ -256,7 +307,6 @@ export default function ProductsPage() {
   const handleUpdateProduct = async (productData: Product) => {
      if (!productData.id) return; // Should have id if editing
     try {
-       // Make sure to pass only the updateable fields if needed, or the whole object
       await updateProduct(productData.id, productData);
       toast({ title: "نجاح", description: "تم تحديث المنتج بنجاح." });
        setEditingProduct(null); // Clear editing state
@@ -286,25 +336,31 @@ export default function ProductsPage() {
   const columns: ColumnDef<Product>[] = [
      {
       accessorKey: "categoryIcon",
-      header: "", // No header text needed for icon
+      header: "",
       cell: ({ row }) => {
           const Icon = row.original.categoryIcon || Package;
-          return <Icon className="w-5 h-5 text-muted-foreground mx-auto" />; // Center icon
+          return <Icon className="w-5 h-5 text-muted-foreground mx-auto" />;
       },
        enableSorting: false,
        enableHiding: false,
-       size: 40, // Smaller size for icon column
+       size: 40,
     },
     {
       accessorKey: "nameAr",
-      header: "الاسم (عربي)",
-      size: 180, // Adjust size
+      header: "الاسم", // Shorten header
+       cell: ({ row }) => (
+           <div className="flex flex-col">
+               <span className="font-medium">{row.original.nameAr}</span>
+               <span className="text-xs text-muted-foreground">{row.original.nameEn}</span>
+           </div>
+       ),
+      size: 200,
     },
      {
         accessorKey: "barcode",
         header: "الباركود",
-        cell: ({ row }) => row.original.barcode || '-', // Display barcode or dash
-        size: 120, // Adjust size
+        cell: ({ row }) => row.original.barcode || '-',
+        size: 100,
      },
      {
        accessorKey: "unitType",
@@ -316,23 +372,62 @@ export default function ProductsPage() {
             }
             return p.unitType;
        },
-       size: 100, // Adjust size
+       size: 110,
      },
     {
       accessorKey: "price",
       header: "السعر",
-       cell: ({ row }) => `${row.original.price.toFixed(2)} ر.س`,
-       size: 80,
+       cell: ({ row }) => (
+           <div className="flex items-center gap-1">
+               <span>{row.original.price.toFixed(2)}</span>
+                {row.original.discountRate && row.original.discountRate > 0 && (
+                    <span className="text-xs text-red-600 font-medium">(-{row.original.discountRate}%)</span>
+                )}
+           </div>
+       ),
+       size: 90,
     },
     {
       accessorKey: "quantity",
       header: "الكمية",
        cell: ({ row }) => {
-            // Display quantity with appropriate precision if fractional
             const qty = row.original.quantity;
-            return Number.isInteger(qty) ? qty : qty.toFixed(2);
+            const minStock = row.original.minStockLevel;
+            const isLowStock = minStock !== undefined && qty <= minStock;
+            return (
+                <div className="flex items-center gap-1">
+                    <span className={cn(isLowStock && "text-amber-600 font-bold")}>
+                        {Number.isInteger(qty) ? qty : qty.toFixed(2)}
+                    </span>
+                    {isLowStock && <AlertCircle className="w-4 h-4 text-amber-600" title={`الكمية أقل من الحد الأدنى (${minStock})`} />}
+                 </div>
+            );
         },
-      size: 80,
+      size: 90,
+    },
+    {
+      accessorKey: "expiryDate",
+      header: "انتهاء الصلاحية",
+      cell: ({ row }) => {
+           const expiry = row.original.expiryDate;
+           if (!expiry) return '-';
+
+           const daysLeft = calculateDaysUntilExpiry(expiry);
+           let colorClass = '';
+           if (daysLeft < 0) colorClass = 'text-red-700 font-bold'; // Expired
+           else if (daysLeft <= 60) colorClass = 'text-orange-600 font-medium'; // Nearing expiry (e.g., 60 days)
+
+           return (
+               <span className={cn(colorClass)}>
+                   {format(expiry, "dd/MM/yyyy", { locale: arSA })}
+                   {daysLeft < 0 && ` (منتهي)`}
+                   {daysLeft >= 0 && daysLeft <= 60 && ` (خلال ${daysLeft} يوم)`}
+               </span>
+           );
+      },
+       enableSorting: true,
+       sortingFn: 'datetime', // Enable date sorting
+       size: 140,
     },
     {
       id: "actions",
@@ -349,7 +444,6 @@ export default function ProductsPage() {
                     <Trash2 className="h-4 w-4" />
                 </Button>
            </AlertDialogTrigger>
-           {/* Alert Dialog for Delete Confirmation */}
             <AlertDialogContent>
                  <AlertDialogHeader>
                      <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
@@ -368,7 +462,7 @@ export default function ProductsPage() {
              </AlertDialogContent>
         </div>
       ),
-      size: 100, // Fixed size for actions
+      size: 100,
     },
   ];
 
@@ -386,11 +480,11 @@ export default function ProductsPage() {
       columnFilters,
     },
     initialState: {
-        pagination: { pageSize: 15 }, // Set page size
+        pagination: { pageSize: 15 },
+        sorting: [{ id: 'expiryDate', desc: false }], // Default sort by expiry ascending
     }
   });
 
-   // Close form and reset editing state
   const handleCloseForm = () => {
       setIsFormOpen(false);
       setEditingProduct(null);
@@ -398,13 +492,13 @@ export default function ProductsPage() {
 
 
   return (
-      <AlertDialog> {/* Wrap with AlertDialog for delete confirmation */}
-       <Dialog open={isFormOpen} onOpenChange={(open) => { if (!open) handleCloseForm(); else setIsFormOpen(true); }}> {/* Manage Dialog state */}
+      <AlertDialog>
+       <Dialog open={isFormOpen} onOpenChange={(open) => { if (!open) handleCloseForm(); else setIsFormOpen(true); }}>
             <div className="p-4 md:p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-2xl font-semibold">إدارة الأصناف</h2>
                 <DialogTrigger asChild>
-                    <Button onClick={() => { setEditingProduct(null); setIsFormOpen(true); }}> {/* Ensure editingProduct is null for add */}
+                    <Button onClick={() => { setEditingProduct(null); setIsFormOpen(true); }}>
                         <PlusCircle className="ml-2 h-5 w-5" />
                         إضافة منتج
                     </Button>
@@ -413,7 +507,7 @@ export default function ProductsPage() {
 
                <div className="flex items-center py-4 gap-4">
                  <Input
-                    placeholder="ابحث بالاسم العربي..."
+                    placeholder="ابحث بالاسم..."
                     value={(table.getColumn("nameAr")?.getFilterValue() as string) ?? ""}
                     onChange={(event) =>
                         table.getColumn("nameAr")?.setFilterValue(event.target.value)
@@ -426,7 +520,7 @@ export default function ProductsPage() {
                     onChange={(event) =>
                         table.getColumn("barcode")?.setFilterValue(event.target.value)
                     }
-                    className="max-w-sm"
+                    className="max-w-xs" // Shorter width for barcode search
                  />
              </div>
 
@@ -437,19 +531,12 @@ export default function ProductsPage() {
                       <TableRow key={headerGroup.id}>
                         {headerGroup.headers.map((header) => (
                           <TableHead key={header.id}
-                             style={{ width: header.getSize() !== 150 ? `${header.getSize()}px` : undefined }} // Apply size for fixed columns
+                             style={{ width: header.getSize() !== 150 ? `${header.getSize()}px` : undefined }}
                              onClick={header.column.getToggleSortingHandler()}
-                             className={header.column.getCanSort() ? 'cursor-pointer select-none' : ''}>
-                            {header.isPlaceholder
-                              ? null
-                              : flexRender(
-                                  header.column.columnDef.header,
-                                  header.getContext()
-                                )}
-                                {{
-                                asc: ' 🔼',
-                                desc: ' 🔽',
-                                }[header.column.getIsSorted() as string] ?? null}
+                             className={cn(header.column.getCanSort() ? 'cursor-pointer select-none' : '', 'whitespace-nowrap')} // Prevent wrapping header
+                          >
+                            {header.isPlaceholder ? null : flexRender( header.column.columnDef.header, header.getContext() )}
+                            {header.column.getCanSort() && { asc: ' 🔼', desc: ' 🔽' }[header.column.getIsSorted() as string]}
                           </TableHead>
                         ))}
                       </TableRow>
@@ -509,8 +596,7 @@ export default function ProductsPage() {
                  </div>
             </div>
 
-             {/* Dialog Content for Add/Edit */}
-            <DialogContent className="sm:max-w-xl"> {/* Wider dialog for more fields */}
+            <DialogContent className="sm:max-w-2xl"> {/* Wider dialog */}
                 <DialogHeader>
                  <DialogTitle>{editingProduct ? 'تعديل المنتج' : 'إضافة منتج جديد'}</DialogTitle>
                 </DialogHeader>
@@ -524,3 +610,4 @@ export default function ProductsPage() {
      </AlertDialog>
   );
 }
+

@@ -1,5 +1,4 @@
 
-
 export interface Product {
   id: string;
   nameAr: string;
@@ -11,6 +10,9 @@ export interface Product {
   unitType: string; // e.g., 'علبة', 'شريط', 'حبة'
   subUnitType?: string; // Optional: e.g., 'شريط', 'حبة'
   subUnitsPerUnit?: number; // Optional: How many sub-units make up the main unit (e.g., 3 strips per box)
+  discountRate?: number; // Optional: Discount percentage (0-100)
+  expiryDate?: Date; // Optional: Expiry date
+  minStockLevel?: number; // Optional: Minimum stock level for alerts
 }
 
 export interface CartItem extends Product {
@@ -77,4 +79,9 @@ export interface User {
   email: string; // Usually used for login
   role: UserRole;
   // Add other relevant fields like isActive, passwordHash (never store plain password!)
+}
+
+// Helper type for products nearing expiry
+export interface ProductExpiryInfo extends Pick<Product, 'id' | 'nameAr' | 'expiryDate' | 'quantity'> {
+    daysUntilExpiry: number;
 }

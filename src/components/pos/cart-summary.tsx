@@ -4,7 +4,7 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { ShoppingCart, CreditCard, Trash2, Loader2, Printer } from 'lucide-react'; // Added Printer
+import { ShoppingCart, CreditCard, Trash2, Loader2, Printer, BadgePercent } from 'lucide-react'; // Added Printer and BadgePercent
 import { useCart } from '@/hooks/use-cart';
 import { CartItem } from './cart-item';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -19,32 +19,45 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { addSale, updateProduct, getProductNameById, getProductById } from '@/lib/data'; // Import addSale, updateProduct, getProductNameById, getProductById
-import type { SaleTransaction, SaleTransactionItem, Product } from '@/lib/types'; // Import SaleTransaction type
+import { addSale, getProductById } from '@/lib/data'; // Use simplified imports
+import type { SaleTransaction, SaleTransactionItem, Product } from '@/lib/types';
+
+// Helper to apply discount - copied for local use if needed, but ideally imported
+const applyDiscount = (price: number, discountRate?: number): number => {
+    if (discountRate && discountRate > 0 && discountRate <= 100) {
+        return price * (1 - discountRate / 100);
+    }
+    return price;
+};
 
 export function CartSummary() {
-  const { items, getTotalPrice, getItemCount, clearCart } = useCart();
+  // Use getOriginalTotalPrice from the hook
+  const { items, getTotalPrice, getItemCount, clearCart, getOriginalTotalPrice } = useCart();
   const { toast } = useToast();
   const [isClient, setIsClient] = React.useState(false);
-  const [isCheckingOut, setIsCheckingOut] = React.useState(false); // Checkout loading state
-  const [lastSale, setLastSale] = React.useState<SaleTransaction | null>(null); // State to hold last sale for printing
+  const [isCheckingOut, setIsCheckingOut] = React.useState(false);
+  const [lastSale, setLastSale] = React.useState<SaleTransaction | null>(null);
   const [productDetailsMap, setProductDetailsMap] = React.useState<Map<string, Product>>(new Map());
 
   React.useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Pre-fetch product details for items in the cart to get unit names for printing
+  // Pre-fetch product details for items in the cart
   React.useEffect(() => {
       const fetchProductDetails = async () => {
           const newMap = new Map(productDetailsMap);
           let mapUpdated = false;
           for (const item of items) {
               if (!newMap.has(item.id)) {
-                  const product = await getProductById(item.id);
-                  if (product) {
-                      newMap.set(item.id, product);
-                      mapUpdated = true;
+                  try {
+                     const product = await getProductById(item.id);
+                     if (product) {
+                         newMap.set(item.id, product);
+                         mapUpdated = true;
+                     }
+                  } catch (error) {
+                      console.error(`Failed to fetch details for product ${item.id}:`, error);
                   }
               }
           }
@@ -52,8 +65,10 @@ export function CartSummary() {
               setProductDetailsMap(newMap);
           }
       };
-      fetchProductDetails();
-  }, [items, productDetailsMap]);
+      if (items.length > 0) {
+          fetchProductDetails();
+      }
+  }, [items]); // Dependency array includes items
 
 
   // Basic print function for the last sale invoice
@@ -66,34 +81,48 @@ export function CartSummary() {
         return;
     }
 
-    // Fetch product names and unit labels for the invoice items
-     let itemRowsHtml = '';
-     for (const item of saleToPrint.items) {
-         // Fetch product details on demand if not already in map
-         let product = productDetailsMap.get(item.productId);
-         if (!product) {
-             product = await getProductById(item.productId);
-             if (product) {
-                 setProductDetailsMap(prevMap => new Map(prevMap).set(item.productId, product!));
+    let itemRowsHtml = '';
+    let totalOriginalAmount = 0;
+
+    for (const item of saleToPrint.items) {
+        let product = productDetailsMap.get(item.productId);
+         if (!product) { // Fetch if missing (fallback)
+             try {
+                 product = await getProductById(item.productId);
+                 if (product) {
+                     setProductDetailsMap(prevMap => new Map(prevMap).set(item.productId, product!));
+                 }
+             } catch (error) {
+                 console.error(`Failed to fetch details for product ${item.productId} during print:`, error);
              }
          }
 
-         const productName = product ? product.nameAr : `منتج (${item.productId.substring(0,6)})`;
-         const unitLabel = item.soldUnitType === 'sub'
-                 ? product?.subUnitType || 'فرعية' // Fallback label
-                 : product?.unitType || 'رئيسية'; // Fallback label
+        const productName = product ? product.nameAr : `منتج (${item.productId.substring(0,6)})`;
+        const unitLabel = item.soldUnitType === 'sub'
+                ? product?.subUnitType || 'فرعية'
+                : product?.unitType || 'رئيسية';
 
-         itemRowsHtml += `
+        // Calculate original price for this item based on the stored product details
+         const originalUnitPrice = item.soldUnitType === 'sub'
+             ? (product ? product.price / (product.subUnitsPerUnit || 1) : item.price / (1 - (product?.discountRate || 0)/100) ) // Estimate original if needed
+             : (product ? product.price : item.price / (1 - (product?.discountRate || 0)/100) ); // Estimate original if needed
+
+        const originalItemTotal = originalUnitPrice * item.quantity;
+        totalOriginalAmount += originalItemTotal;
+        const discountAmount = originalItemTotal - (item.price * item.quantity);
+
+        itemRowsHtml += `
              <tr>
                  <td>${productName}</td>
                  <td>${unitLabel}</td>
                  <td>${item.quantity}</td>
-                 <td>${item.price.toFixed(2)}</td>
+                 <td>${item.price.toFixed(2)} ${product?.discountRate ? `<span style="font-size:0.8em; color:gray; text-decoration: line-through;">(${originalUnitPrice.toFixed(2)})</span>` : ''}</td>
                  <td>${(item.quantity * item.price).toFixed(2)}</td>
              </tr>
          `;
      }
 
+    const totalDiscount = totalOriginalAmount - saleToPrint.totalAmount;
 
     printWindow.document.write(`
      <html>
@@ -105,7 +134,9 @@ export function CartSummary() {
              table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
              th, td { border: 1px solid #ddd; padding: 6px; text-align: right; }
              th { background-color: #f2f2f2; font-weight: bold; }
-             .total { font-weight: bold; font-size: 1.1em; margin-top: 15px; text-align: left; }
+             .totals { margin-top: 15px; text-align: left; font-size: 1.0em; line-height: 1.5; }
+             .totals span { display: inline-block; min-width: 100px; }
+             .totals strong { font-weight: bold; font-size: 1.1em; }
              .header { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; text-align: center;}
              .header h2 { margin: 0; font-size: 1.5em; }
              .info p { margin: 3px 0; }
@@ -122,7 +153,7 @@ export function CartSummary() {
          </div>
          <div class="info">
              <p><strong>رقم الفاتورة:</strong> ${saleToPrint.id}</p>
-             <p><strong>التاريخ:</strong> ${saleToPrint.date.toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short'})}</p>
+             <p><strong>التاريخ:</strong> ${new Date(saleToPrint.date).toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short'})}</p>
              <p><strong>العميل:</strong> ${saleToPrint.customerId || 'عميل نقدي'}</p> {/* TODO: Add customer name lookup */}
          </div>
          <table>
@@ -139,9 +170,10 @@ export function CartSummary() {
                  ${itemRowsHtml}
              </tbody>
          </table>
-         <div class="total">
-             <span>إجمالي الفاتورة: </span>
-             <span>${saleToPrint.totalAmount.toFixed(2)} ر.س</span>
+         <div class="totals">
+             <div><span>الإجمالي الأصلي:</span> ${totalOriginalAmount.toFixed(2)} ر.س</div>
+             ${totalDiscount > 0 ? `<div><span>الخصم:</span> ${totalDiscount.toFixed(2)} ر.س</div>` : ''}
+             <div><strong>الإجمالي النهائي:</strong> <strong>${saleToPrint.totalAmount.toFixed(2)} ر.س</strong></div>
          </div>
           <button onclick="window.print()">طباعة</button>
           <button onclick="window.close()">إغلاق</button>
@@ -149,9 +181,7 @@ export function CartSummary() {
      </html>
     `);
     printWindow.document.close();
-    printWindow.focus(); // Focus the new window (might not work depending on browser)
-     // Optional: Automatically trigger print dialog
-    // setTimeout(() => printWindow.print(), 500);
+    printWindow.focus();
   };
 
 
@@ -161,33 +191,30 @@ export function CartSummary() {
         return;
     }
     setIsCheckingOut(true);
-    setLastSale(null); // Clear previous sale before new checkout
+    setLastSale(null);
 
     try {
-      // 1. Prepare sale transaction data
+      // Prepare sale transaction data using discounted prices stored in cart items
       const saleItems: SaleTransactionItem[] = items.map(item => ({
         productId: item.id,
         quantity: item.cartQuantity,
-        price: item.pricePerSelectedUnit, // Use the calculated price per selected unit
-        soldUnitType: item.selectedUnitType // Record whether 'main' or 'sub' unit was sold
+        price: item.pricePerSelectedUnit, // This is the already discounted price
+        soldUnitType: item.selectedUnitType
       }));
 
       const saleData: Omit<SaleTransaction, 'id'> = {
-        // customerId: selectedCustomer?.id, // Optional: Add customer selection later
+        // customerId: selectedCustomer?.id,
         items: saleItems,
-        totalAmount: getTotalPrice(),
+        totalAmount: getTotalPrice(), // Use the total price after discount
         date: new Date(),
       };
 
-      // 2. Save the sale transaction (which now also updates stock in lib/data.ts)
+      // Save the sale transaction (which also updates stock)
       const newSale = await addSale(saleData);
-      console.log('Sale created and stock updated:', newSale);
-      setLastSale(newSale); // Store the completed sale for printing
+      setLastSale(newSale);
 
-      // 3. Clear the cart
       clearCart();
 
-      // 4. Show success message with print option
       toast({
         title: "تمت عملية البيع بنجاح",
         description: `فاتورة رقم ${newSale.id} | المبلغ ${newSale.totalAmount.toFixed(2)} ر.س`,
@@ -198,8 +225,6 @@ export function CartSummary() {
             </Button>
         ),
       });
-
-      // No need to update product quantities here as it's handled within addSale
 
     } catch (error) {
       console.error("Checkout failed:", error);
@@ -235,8 +260,9 @@ export function CartSummary() {
   }
 
   const itemCount = getItemCount();
-  const totalPrice = getTotalPrice();
-
+  const finalTotalPrice = getTotalPrice(); // Price after discount
+  const originalTotalPrice = getOriginalTotalPrice(); // Price before discount
+  const totalDiscount = originalTotalPrice - finalTotalPrice;
 
   return (
     <Sheet>
@@ -245,9 +271,9 @@ export function CartSummary() {
           <ShoppingCart className="h-5 w-5" />
           {itemCount > 0 && (
              <Badge
-              variant="destructive" // Use destructive variant for high visibility like red
+              variant="destructive"
               className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center rounded-full text-xs"
-              style={{ lineHeight: '1' }} // Ensure number fits well
+              style={{ lineHeight: '1' }}
             >
               {itemCount}
             </Badge>
@@ -269,7 +295,6 @@ export function CartSummary() {
           ) : (
             <div className="space-y-1">
               {items.map((item, index) => (
-                // Need a unique key combining id and unit type
                 <CartItem key={`${item.id}-${item.selectedUnitType}-${index}`} item={item} />
               ))}
             </div>
@@ -277,27 +302,41 @@ export function CartSummary() {
         </ScrollArea>
         {items.length > 0 && (
           <SheetFooter className="px-6 py-4 border-t bg-secondary/50">
-            <div className="w-full space-y-4">
-               <div className="flex justify-between items-center font-semibold text-lg">
-                <span>الإجمالي:</span>
-                <span>{totalPrice.toFixed(2)} ر.س</span>
-              </div>
+            <div className="w-full space-y-3">
+               {/* Pricing Details */}
+                <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                        <span>الإجمالي الأصلي:</span>
+                        <span>{originalTotalPrice.toFixed(2)} ر.س</span>
+                    </div>
+                    {totalDiscount > 0 && (
+                        <div className="flex justify-between text-green-600">
+                             <span>الخصم:</span>
+                            <span>- {totalDiscount.toFixed(2)} ر.س</span>
+                         </div>
+                    )}
+                    <Separator className="my-1"/>
+                    <div className="flex justify-between items-center font-semibold text-lg">
+                        <span>الإجمالي النهائي:</span>
+                        <span>{finalTotalPrice.toFixed(2)} ر.س</span>
+                    </div>
+                </div>
+
               <Separator />
               <div className="flex gap-2">
                  <Button
                     variant="outline"
                     className="flex-1 text-destructive hover:bg-destructive/10 border-destructive/50"
                     onClick={handleClearCart}
-                    disabled={isCheckingOut} // Disable while checking out
+                    disabled={isCheckingOut}
                   >
                     <Trash2 className="ml-2 h-4 w-4" />
                     تفريغ السلة
                   </Button>
-                 {/* Keep checkout button outside SheetClose if we handle closing manually on success */}
                   <Button
-                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground" // Changed to primary color
+                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
                     onClick={handleCheckout}
-                    disabled={isCheckingOut} // Disable while checking out
+                    disabled={isCheckingOut}
                   >
                      {isCheckingOut ? (
                        <Loader2 className="ml-2 h-4 w-4 animate-spin" />
@@ -306,10 +345,7 @@ export function CartSummary() {
                      )}
                     {isCheckingOut ? 'جاري التنفيذ...' : 'إتمام الشراء'}
                   </Button>
-                 {/* <SheetClose asChild> needed if button should close sheet directly */}
-
               </div>
-                {/* Optional: Add a button to print the last invoice if available */}
                  {lastSale && (
                     <Button variant="secondary" size="sm" className="w-full mt-2" onClick={() => handlePrintInvoice(lastSale)}>
                         <Printer className="ml-2 h-4 w-4" />
@@ -323,3 +359,4 @@ export function CartSummary() {
     </Sheet>
   );
 }
+

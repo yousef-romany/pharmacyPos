@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Minus, Plus, Trash2 } from 'lucide-react';
 import { useCart } from '@/hooks/use-cart';
 import { useToast } from "@/hooks/use-toast";
+import { cn } from '@/lib/utils'; // Import cn
 
 interface CartItemProps {
   item: CartItemType;
@@ -24,6 +25,17 @@ const getAvailableQuantity = (product: CartItemType, selectedUnitType: 'main' | 
     return Math.floor(product.quantity);
 };
 
+// Helper to calculate original price before discount
+const calculateOriginalPrice = (item: CartItemType): number => {
+     const basePrice = item.selectedUnitType === 'sub'
+        ? (item.price / (item.subUnitsPerUnit || 1))
+        : item.price;
+     // If discount was applied, calculate original from discounted price
+     if (item.discountRate && item.pricePerSelectedUnit !== basePrice) {
+         return item.pricePerSelectedUnit / (1 - item.discountRate / 100);
+     }
+     return item.pricePerSelectedUnit; // No discount, return the stored price
+};
 
 export function CartItem({ item }: CartItemProps) {
   const { updateItemQuantity, removeItem } = useCart();
@@ -37,6 +49,9 @@ export function CartItem({ item }: CartItemProps) {
 
   const unitLabel = item.selectedUnitType === 'sub' ? item.subUnitType : item.unitType;
   const availableStockInSelectedUnit = getAvailableQuantity(item, item.selectedUnitType);
+  const originalPrice = calculateOriginalPrice(item); // Calculate original price
+  const hasDiscount = item.discountRate && item.discountRate > 0 && originalPrice !== item.pricePerSelectedUnit;
+
 
   const handleQuantityChange = (newQuantity: number) => {
     // Validate quantity: must be >= 0 and <= available stock for the selected unit
@@ -70,21 +85,16 @@ export function CartItem({ item }: CartItemProps) {
     if (!isNaN(value)) {
       handleQuantityChange(value);
     } else if (e.target.value === '') {
-        // Allow clearing the input, treat as 0 temporarily
         setQuantity(0);
-        // Optionally trigger update immediately or wait for blur
-        // updateItemQuantity(item.id, item.selectedUnitType, 0);
     }
   };
 
   const handleBlur = () => {
-      // On blur, finalize the quantity update based on the local state
        handleQuantityChange(quantity);
   };
 
 
   const handleRemove = () => {
-    // Use the specific removeItem signature
     removeItem(item.id, item.selectedUnitType);
     toast({
       title: "تمت الإزالة من السلة",
@@ -96,17 +106,22 @@ export function CartItem({ item }: CartItemProps) {
 
   return (
     <div className="flex items-center justify-between py-3 border-b last:border-b-0">
-      <div className="flex-1 min-w-0 mr-4"> {/* Use mr-4 for spacing in RTL */}
+      <div className="flex-1 min-w-0 mr-4">
         <p className="font-medium truncate">{item.nameAr} <span className="text-xs text-muted-foreground">({unitLabel})</span></p>
-        <p className="text-sm text-muted-foreground">{(item.pricePerSelectedUnit * quantity).toFixed(2)} ر.س</p>
+        <div className="flex items-baseline gap-1">
+             <p className="text-sm text-foreground font-semibold">{(item.pricePerSelectedUnit * quantity).toFixed(2)} ر.س</p>
+             {hasDiscount && (
+                 <p className="text-xs text-muted-foreground line-through">{(originalPrice * quantity).toFixed(2)} ر.س</p>
+             )}
+         </div>
       </div>
-      <div className="flex items-center space-x-2 space-x-reverse"> {/* Reverse space for RTL */}
+      <div className="flex items-center space-x-2 space-x-reverse">
         <Button
           variant="outline"
           size="icon"
           className="h-8 w-8"
           onClick={() => handleQuantityChange(quantity - 1)}
-          disabled={quantity <= 0} // Disable if quantity is already 0
+          disabled={quantity <= 0}
           aria-label="Decrease quantity"
         >
           <Minus className="h-4 w-4" />
@@ -114,11 +129,11 @@ export function CartItem({ item }: CartItemProps) {
         <Input
           type="number"
           min="0"
-          max={availableStockInSelectedUnit} // Set max based on available stock
-           value={quantity === 0 && document.activeElement === event?.target ? '' : quantity.toString()} // Show empty if focused and 0
+          max={availableStockInSelectedUnit}
+           value={quantity === 0 && document.activeElement === event?.target ? '' : quantity.toString()}
           onChange={handleInputChange}
           onBlur={handleBlur}
-          className="h-8 w-14 text-center px-1" // Adjusted width and padding
+          className="h-8 w-14 text-center px-1"
           aria-label="Item quantity"
         />
         <Button
@@ -126,7 +141,7 @@ export function CartItem({ item }: CartItemProps) {
           size="icon"
           className="h-8 w-8"
           onClick={() => handleQuantityChange(quantity + 1)}
-          disabled={quantity >= availableStockInSelectedUnit} // Disable if max stock reached
+          disabled={quantity >= availableStockInSelectedUnit}
           aria-label="Increase quantity"
         >
           <Plus className="h-4 w-4" />

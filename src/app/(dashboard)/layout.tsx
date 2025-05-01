@@ -102,7 +102,7 @@ export default function DashboardLayout({
                     variant="default" // Ensure variant is passed if needed
                     size="default" // Ensure size is passed if needed
                   >
-                    <Link href={item.href} > {/* Removed legacyBehavior */}
+                    <Link href={item.href} dir="rtl" className='w-full flex justify-between items-center'> {/* Removed legacyBehavior */}
                         <item.icon />
                         <span>{item.label}</span>
                       {item.badge && isClient && cartItemCount > 0 && (

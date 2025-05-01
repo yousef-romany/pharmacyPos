@@ -1,7 +1,7 @@
 
-
-import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User } from '@/lib/types';
+import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User, ProductExpiryInfo } from '@/lib/types';
 import { Pill, Baby, SprayCan, Activity } from 'lucide-react';
+import { differenceInDays, addDays, isBefore, isSameDay } from 'date-fns';
 
 // --- Products Data ---
 let sampleProducts: Product[] = [
@@ -10,12 +10,15 @@ let sampleProducts: Product[] = [
     nameAr: 'بنادول اكسترا',
     nameEn: 'Panadol Extra',
     price: 15.50, // Price per box
-    quantity: 150, // Boxes in stock
+    quantity: 8, // Boxes in stock - LOW STOCK EXAMPLE
     categoryIcon: Pill,
     barcode: '6281060000010',
     unitType: 'علبة', // Main unit
     subUnitType: 'شريط', // Sub unit
     subUnitsPerUnit: 2, // 2 strips per box
+    expiryDate: addDays(new Date(), 60), // Expires in ~2 months
+    minStockLevel: 10, // Minimum 10 boxes
+    discountRate: 5, // 5% discount
   },
   {
     id: 'prod-002',
@@ -28,6 +31,8 @@ let sampleProducts: Product[] = [
     unitType: 'علبة', // Main unit (e.g., a tube)
     subUnitType: 'قرص', // Sub unit
     subUnitsPerUnit: 10, // 10 tablets per tube
+    expiryDate: addDays(new Date(), 300), // Expires in ~10 months
+    minStockLevel: 20,
   },
   {
     id: 'prod-003',
@@ -38,6 +43,8 @@ let sampleProducts: Product[] = [
     categoryIcon: Baby,
     barcode: '6281060000034',
     unitType: 'علبة', // Only main unit
+    expiryDate: addDays(new Date(), 15), // EXPIRES SOON EXAMPLE
+    minStockLevel: 15,
   },
   {
     id: 'prod-004',
@@ -48,6 +55,8 @@ let sampleProducts: Product[] = [
     categoryIcon: SprayCan,
     barcode: '6281060000041',
     unitType: 'بخاخ', // Only main unit
+    expiryDate: addDays(new Date(), -10), // EXPIRED EXAMPLE
+    minStockLevel: 10,
   },
   {
     id: 'prod-005',
@@ -60,16 +69,20 @@ let sampleProducts: Product[] = [
     unitType: 'علبة',
     subUnitType: 'شريط',
     subUnitsPerUnit: 3, // 3 strips per box
+    expiryDate: addDays(new Date(), 180), // Expires in ~6 months
+    minStockLevel: 50,
   },
   {
     id: 'prod-006',
     nameAr: 'مكمل غذائي حديد',
     nameEn: 'Iron Supplement',
     price: 40.00,
-    quantity: 90,
+    quantity: 5, // LOW STOCK EXAMPLE
     categoryIcon: Activity,
     barcode: '6281060000065',
     unitType: 'علبة', // Only main unit
+    expiryDate: addDays(new Date(), 400),
+    minStockLevel: 10,
   },
     {
     id: 'prod-007',
@@ -80,6 +93,9 @@ let sampleProducts: Product[] = [
     categoryIcon: Baby,
     barcode: '6281060000072',
     unitType: 'أنبوب', // Only main unit
+    expiryDate: addDays(new Date(), 90), // Expires in ~3 months
+    minStockLevel: 25,
+     discountRate: 10, // 10% discount
   },
   {
     id: 'prod-008',
@@ -90,6 +106,8 @@ let sampleProducts: Product[] = [
     categoryIcon: SprayCan, // Placeholder, could be Bottle icon
     barcode: '6281060000089',
     unitType: 'زجاجة', // Only main unit
+    expiryDate: addDays(new Date(), 500),
+    minStockLevel: 30,
   },
 ];
 
@@ -97,18 +115,24 @@ let sampleProducts: Product[] = [
 export async function getProducts(): Promise<Product[]> {
   // In a real app, this would fetch data from a source
   await new Promise(resolve => setTimeout(resolve, 50)); // Simulate network delay
-  return [...sampleProducts]; // Return a copy
+   // Parse expiry dates if they are stored as strings
+   return sampleProducts.map(p => ({
+     ...p,
+     expiryDate: p.expiryDate ? new Date(p.expiryDate) : undefined, // Ensure expiryDate is a Date object
+   }));
 }
 
 export async function getProductById(id: string): Promise<Product | undefined> {
   await new Promise(resolve => setTimeout(resolve, 20));
-  return sampleProducts.find(p => p.id === id);
+  const product = sampleProducts.find(p => p.id === id);
+  return product ? { ...product, expiryDate: product.expiryDate ? new Date(product.expiryDate) : undefined } : undefined;
 }
 
 // Simulate finding product by barcode (in real app, query DB/API)
 export async function getProductByBarcode(barcode: string): Promise<Product | undefined> {
     await new Promise(resolve => setTimeout(resolve, 20));
-    return sampleProducts.find(p => p.barcode === barcode);
+    const product = sampleProducts.find(p => p.barcode === barcode);
+     return product ? { ...product, expiryDate: product.expiryDate ? new Date(product.expiryDate) : undefined } : undefined;
 }
 
 
@@ -121,10 +145,13 @@ export async function addProduct(productData: Omit<Product, 'id'>): Promise<Prod
     price: productData.price || 0,
     quantity: productData.quantity || 0,
     categoryIcon: productData.categoryIcon || Pill, // Default icon
-    barcode: productData.barcode || '', // Add barcode
-    unitType: productData.unitType || 'قطعة', // Default unit type
+    barcode: productData.barcode || '',
+    unitType: productData.unitType || 'قطعة',
     subUnitType: productData.subUnitType,
     subUnitsPerUnit: productData.subUnitsPerUnit,
+    discountRate: productData.discountRate,
+    expiryDate: productData.expiryDate ? new Date(productData.expiryDate) : undefined,
+    minStockLevel: productData.minStockLevel,
   };
   sampleProducts.push(newProduct);
   console.log("Added Product:", newProduct);
@@ -137,34 +164,47 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
   const index = sampleProducts.findIndex(p => p.id === id);
   if (index === -1) return null;
 
-  // Update the product, ensuring quantity is handled correctly (potentially fractional)
   const currentProduct = sampleProducts[index];
-  let updatedProduct = { ...currentProduct, ...updates };
+  // Ensure date is properly handled if updated
+  const updateData = { ...updates };
+  if (updateData.expiryDate) {
+      updateData.expiryDate = new Date(updateData.expiryDate);
+  }
 
-   // Ensure quantity is a number and not negative. Allow fractional quantities.
+  let updatedProduct = { ...currentProduct, ...updateData };
+
+  // --- Validation and Cleaning ---
+  // Ensure quantity is non-negative
   if (typeof updatedProduct.quantity === 'number' && updatedProduct.quantity < 0) {
     updatedProduct.quantity = 0;
   } else if (typeof updatedProduct.quantity !== 'number') {
-      // If quantity update is not a valid number, keep the original
-      updatedProduct.quantity = currentProduct.quantity;
+    updatedProduct.quantity = currentProduct.quantity;
   }
 
-  // Ensure subUnitsPerUnit is handled if updated
-   if (updates.subUnitsPerUnit !== undefined) {
-       updatedProduct.subUnitsPerUnit = updates.subUnitsPerUnit > 0 ? updates.subUnitsPerUnit : undefined;
-       if (!updatedProduct.subUnitsPerUnit) {
-           updatedProduct.subUnitType = undefined; // Clear sub-unit type if count is invalid/zero
-       }
+  // Ensure subUnitsPerUnit is handled
+  if (updates.subUnitsPerUnit !== undefined) {
+    updatedProduct.subUnitsPerUnit = updates.subUnitsPerUnit > 0 ? updates.subUnitsPerUnit : undefined;
+    if (!updatedProduct.subUnitsPerUnit) {
+      updatedProduct.subUnitType = undefined;
+    }
+  }
+
+  // Ensure price is non-negative
+  if (typeof updatedProduct.price === 'number' && updatedProduct.price < 0) {
+    updatedProduct.price = 0;
+  }
+  // Ensure minStockLevel is non-negative integer or undefined
+   if (updates.minStockLevel !== undefined) {
+     updatedProduct.minStockLevel = Number.isInteger(updates.minStockLevel) && updates.minStockLevel >= 0 ? updates.minStockLevel : undefined;
    }
-   // Ensure price is non-negative
-   if (typeof updatedProduct.price === 'number' && updatedProduct.price < 0) {
-      updatedProduct.price = 0;
-   }
+  // Ensure discountRate is between 0 and 100 or undefined
+  if (updates.discountRate !== undefined) {
+      updatedProduct.discountRate = typeof updates.discountRate === 'number' && updates.discountRate >= 0 && updates.discountRate <= 100 ? updates.discountRate : undefined;
+  }
 
 
   sampleProducts[index] = updatedProduct;
   console.log("Updated Product:", sampleProducts[index]);
-  // console.log("Current Products:", sampleProducts); // Optional: Log full list
   return sampleProducts[index];
 }
 
@@ -378,7 +418,9 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id'>)
         const product = await getProductById(item.productId);
         if (product) {
             const newQuantity = product.quantity + item.quantity;
-            await updateProduct(item.productId, { quantity: newQuantity });
+            // Update cost only if needed (e.g., based on FIFO/LIFO or average cost)
+            // For simplicity, we might just update quantity here. Cost update logic depends on requirements.
+            await updateProduct(item.productId, { quantity: newQuantity /* , cost: newCost */ });
             console.log(`Updated product ${item.productId} quantity to ${newQuantity}`);
         } else {
             console.warn(`Product with ID ${item.productId} not found during purchase update.`);
@@ -411,3 +453,65 @@ export async function getUsers(): Promise<User[]> {
 }
 
 // Add functions for addUser, updateUser, deleteUser later as needed
+
+
+// --- Expiry Date Logic ---
+export function calculateDaysUntilExpiry(expiryDate?: Date): number {
+    if (!expiryDate) return Infinity; // Or some large number if no expiry
+    const today = new Date();
+    // Set time to 00:00:00 for accurate day difference calculation
+    today.setHours(0, 0, 0, 0);
+    expiryDate.setHours(0, 0, 0, 0);
+    return differenceInDays(expiryDate, today);
+}
+
+
+// Get products nearing expiry (e.g., within the next 90 days)
+export async function getProductsNearingExpiry(daysThreshold: number = 90): Promise<ProductExpiryInfo[]> {
+    const products = await getProducts();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize today's date
+
+    const nearingExpiry = products
+        .filter(p => p.expiryDate) // Only consider products with an expiry date
+        .map(p => ({
+            ...p,
+            expiryDate: new Date(p.expiryDate!), // Ensure it's a Date object
+            daysUntilExpiry: calculateDaysUntilExpiry(new Date(p.expiryDate!)),
+        }))
+        .filter(p => p.daysUntilExpiry >= 0 && p.daysUntilExpiry <= daysThreshold) // Within threshold and not already expired
+        .sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry); // Sort by soonest expiry first
+
+    return nearingExpiry.map(({ id, nameAr, expiryDate, quantity, daysUntilExpiry }) => ({
+        id,
+        nameAr,
+        expiryDate,
+        quantity,
+        daysUntilExpiry,
+    }));
+}
+
+// Get products that have already expired
+export async function getExpiredProducts(): Promise<ProductExpiryInfo[]> {
+    const products = await getProducts();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Normalize today's date
+
+    const expired = products
+        .filter(p => p.expiryDate) // Only consider products with an expiry date
+        .map(p => ({
+            ...p,
+            expiryDate: new Date(p.expiryDate!), // Ensure it's a Date object
+            daysUntilExpiry: calculateDaysUntilExpiry(new Date(p.expiryDate!)),
+        }))
+        .filter(p => p.daysUntilExpiry < 0) // Expired products
+        .sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry); // Sort by most expired first
+
+     return expired.map(({ id, nameAr, expiryDate, quantity, daysUntilExpiry }) => ({
+        id,
+        nameAr,
+        expiryDate,
+        quantity,
+        daysUntilExpiry,
+    }));
+}
