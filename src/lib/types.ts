@@ -68,3 +68,13 @@ export interface PurchaseTransaction {
   date: Date;
 }
 
+// --- User Management Types ---
+export type UserRole = 'admin' | 'seller' | 'manager' | 'accountant'; // Example roles
+
+export interface User {
+  id: string;
+  name: string;
+  email: string; // Usually used for login
+  role: UserRole;
+  // Add other relevant fields like isActive, passwordHash (never store plain password!)
+}

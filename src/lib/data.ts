@@ -1,6 +1,6 @@
 
 
-import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem } from '@/lib/types';
+import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User } from '@/lib/types';
 import { Pill, Baby, SprayCan, Activity } from 'lucide-react';
 
 // --- Products Data ---
@@ -398,3 +398,16 @@ export async function getProductNameById(id: string): Promise<string> {
     return product ? product.nameAr : `منتج غير معروف (${id.substring(0,6)})`;
 }
 
+// --- User Management Data ---
+let sampleUsers: User[] = [
+  { id: 'user-001', name: 'Admin User', email: 'admin@example.com', role: 'admin' },
+  { id: 'user-002', name: 'Seller User', email: 'seller@example.com', role: 'seller' },
+  { id: 'user-003', name: 'Manager User', email: 'manager@example.com', role: 'manager' },
+];
+
+export async function getUsers(): Promise<User[]> {
+  await new Promise(resolve => setTimeout(resolve, 50));
+  return [...sampleUsers];
+}
+
+// Add functions for addUser, updateUser, deleteUser later as needed

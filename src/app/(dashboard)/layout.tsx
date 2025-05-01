@@ -23,10 +23,12 @@ import {
   Users,
   Building,
   Receipt,
-  Truck, // Added Truck icon for Purchases
+  Truck, // For Purchases
+  Archive, // For Inventory
+  Landmark, // For Treasury
   Settings,
   LogOut,
-  Pill, // Added for Products
+  Pill, // For Products
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,13 +36,15 @@ import { useCart } from '@/hooks/use-cart'; // Import useCart
 
 // Sidebar Navigation Items
 const sidebarNavItems = [
-  { href: '/dashboard', icon: Home, label: 'لوحة التحكم' },
+  { href: '/dashboard/dashboard', icon: Home, label: 'لوحة التحكم' },
   { href: '/pos', icon: ShoppingCart, label: 'نقطة البيع', badge: true },
   { href: '/products', icon: Pill, label: 'الأصناف' },
+  { href: '/purchases', icon: Truck, label: 'المشتريات' }, // Moved Purchases here
   { href: '/suppliers', icon: Building, label: 'الموردين' },
   { href: '/customers', icon: Users, label: 'العملاء' },
   { href: '/sales', icon: Receipt, label: 'فواتير البيع' },
-  { href: '/purchases', icon: Truck, label: 'فواتير الشراء' }, // Added Purchases link
+  // { href: '/inventory', icon: Archive, label: 'المخزون' }, // Keep inventory under settings link for now
+  // { href: '/treasury', icon: Landmark, label: 'الخزنة' }, // Keep treasury under settings link for now
 ];
 
 const settingsNavItems = [
@@ -91,7 +95,7 @@ export default function DashboardLayout({
                     asChild // Use asChild to pass props to the underlying Link -> a
                     isActive={
                       pathname === item.href ||
-                      (item.href !== '/' && pathname.startsWith(item.href))
+                      (item.href !== '/dashboard/dashboard' && pathname.startsWith(item.href))
                     }
                     className="justify-end" // Align content to the right
                     tooltip={item.label}
@@ -157,4 +161,3 @@ export default function DashboardLayout({
     </SidebarProvider>
   );
 }
-

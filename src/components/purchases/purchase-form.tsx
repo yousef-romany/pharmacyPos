@@ -15,6 +15,7 @@ import { Trash2, Plus, Search, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { PurchaseTransaction, PurchaseTransactionItem, Product, Supplier } from '@/lib/types';
 import { getProducts, getProductById } from '@/lib/data'; // Import product fetching functions
+import { Separator } from '@/components/ui/separator'; // Import Separator
 
 // --- Zod Schema for Validation ---
 const purchaseItemSchema = z.object({
