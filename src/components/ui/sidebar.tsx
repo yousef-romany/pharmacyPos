@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -72,10 +73,17 @@ const SidebarProvider = React.forwardRef<
   ) => {
     const isMobile = useIsMobile();
     const [openMobile, setOpenMobile] = React.useState(false);
+    const [isClient, setIsClient] = React.useState(false); // Track client-side mount
 
-    // Read initial state from cookie if available
-    const getInitialOpenState = () => {
-      if (typeof window !== 'undefined') {
+    // Track client-side mount to read cookie safely
+    React.useEffect(() => {
+      setIsClient(true);
+    }, []);
+
+
+    // Read initial state from cookie if available, only on client
+    const getInitialOpenState = React.useCallback(() => {
+      if (isClient) {
         const cookieValue = document.cookie
           .split('; ')
           .find((row) => row.startsWith(`${SIDEBAR_COOKIE_NAME}=`))
@@ -85,10 +93,17 @@ const SidebarProvider = React.forwardRef<
         }
       }
       return defaultOpen;
-    };
+    }, [isClient, defaultOpen]);
 
 
      const [_open, _setOpen] = React.useState(getInitialOpenState);
+
+    // Update state if cookie becomes available after initial render
+    React.useEffect(() => {
+      if (isClient) {
+        _setOpen(getInitialOpenState());
+      }
+    }, [isClient, getInitialOpenState]);
 
 
     // This is the internal state of the sidebar.
@@ -104,11 +119,11 @@ const SidebarProvider = React.forwardRef<
         }
 
         // This sets the cookie to keep the sidebar state.
-        if (typeof window !== 'undefined') {
+        if (isClient) {
             document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}; SameSite=Lax`;
         }
       },
-      [setOpenProp, open]
+      [setOpenProp, open, isClient]
     );
 
     // Helper to toggle the sidebar.
@@ -293,7 +308,7 @@ const SidebarTrigger = React.forwardRef<
   React.ElementRef<typeof Button>,
   React.ComponentProps<typeof Button>
 >(({ className, onClick, ...props }, ref) => {
-  const { toggleSidebar, isMobile, state, side } = useSidebar();
+  const { toggleSidebar } = useSidebar();
 
   return (
     <Button
@@ -427,18 +442,17 @@ const SidebarContent = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<'div'>
 >(({ className, ...props }, ref) => {
-    const { state } = useSidebar(); // Get state
-  return (
-    <div
-      ref={ref}
-      data-sidebar="content"
-      className={cn(
-        'flex min-h-0 flex-1 flex-col gap-1 p-2 overflow-y-auto overflow-x-hidden', // Adjusted padding and gap
-        className
-      )}
-      {...props}
-    />
-  );
+    return (
+      <div
+        ref={ref}
+        data-sidebar="content"
+        className={cn(
+          'flex min-h-0 flex-1 flex-col gap-1 p-2 overflow-y-auto overflow-x-hidden', // Adjusted padding and gap
+          className
+        )}
+        {...props}
+      />
+    );
 });
 SidebarContent.displayName = 'SidebarContent';
 
@@ -527,50 +541,45 @@ const SidebarMenuButton = React.forwardRef<
     },
     ref
   ) => {
-    const Comp = asChild ? Slot : (props as any).href ? 'a' : 'button'; // Detect if it's a link
     const { isMobile, state, side, toggleSidebar } = useSidebar(); // Get sidebar state
+    const Comp = asChild ? Slot : (props as any).href ? 'a' : 'button'; // Detect if it's a link
 
     const showTooltip = tooltip && state === 'collapsed' && !isMobile;
 
-    // Component to render the actual button/link/slot content
-    const RenderedComp = React.forwardRef<any, any>((compProps, compRef) => (
-       <Comp
-            ref={compRef}
-            data-sidebar="menu-button"
-            data-size={size}
-            data-active={isActive}
-            className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
-            // Close mobile sidebar on click/link navigation
-            onClick={(e) => {
-                if (isMobile) {
-                    toggleSidebar(); // Close mobile sidebar
-                }
-                (props as any).onClick?.(e); // Call original onClick if exists
-            }}
-            {...compProps} // Spread props from wrapper (like TooltipTrigger)
-            {...props} // Spread original props (including href etc.)
-        >
-            {children} {/* Render children (icon, span) */}
-        </Comp>
-    ));
-    RenderedComp.displayName = "RenderedComp";
-
+    const ButtonElement = (
+      <Comp
+        ref={ref as any} // Apply the ref here
+        data-sidebar="menu-button"
+        data-size={size}
+        data-active={isActive}
+        className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
+        // Close mobile sidebar on click/link navigation
+        onClick={(e) => {
+          if (isMobile) {
+            toggleSidebar(); // Close mobile sidebar
+          }
+          (props as any).onClick?.(e); // Call original onClick if exists
+        }}
+        {...props} // Spread original props (including href etc.)
+      >
+        {children} {/* Render children (icon, span) */}
+      </Comp>
+    );
 
     if (!showTooltip) {
-        // Render directly if no tooltip needed
-        return <RenderedComp ref={ref} />;
+      // Render directly if no tooltip needed
+      return ButtonElement;
     }
 
     // Tooltip specific props
     const tooltipContentProps: Omit<React.ComponentProps<typeof TooltipContent>, 'children'> =
         typeof tooltip === 'string' ? {} : tooltip; // If tooltip is string, use default props
 
-    // Wrap the RenderedComp with TooltipTrigger when tooltip is active
+    // Wrap the ButtonElement with TooltipTrigger when tooltip is active
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                 {/* Pass the ref down to the RenderedComp */}
-                <RenderedComp ref={ref} />
+                {ButtonElement}
             </TooltipTrigger>
             <TooltipContent
                 side={side === 'right' ? 'left' : 'right'} // Adjust tooltip side based on sidebar side
@@ -711,3 +720,4 @@ export {
 };
 
 export type { SidebarContext }; // Export context type if needed elsewhere
+
