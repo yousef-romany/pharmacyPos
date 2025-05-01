@@ -45,7 +45,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity, Barcode } from 'lucide-react'; // Added Barcode
+import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity, Barcode, Boxes } from 'lucide-react'; // Added Boxes
 import type { Product } from '@/lib/types';
 import { getProducts, addProduct, updateProduct, deleteProduct } from '@/lib/data'; // Import CRUD functions
 
@@ -57,13 +57,17 @@ interface ProductFormProps {
 }
 
 function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
+   // Initialize state including new unit fields
   const [formData, setFormData] = React.useState<Omit<Product, 'id' | 'categoryIcon'> & { categoryIconName?: string }>({
     nameAr: initialData?.nameAr || '',
     nameEn: initialData?.nameEn || '',
-    price: initialData?.price || 0,
-    quantity: initialData?.quantity || 0,
-    barcode: initialData?.barcode || '', // Add barcode
-    categoryIconName: getIconName(initialData?.categoryIcon) || 'Pill', // Store icon name as string
+    price: initialData?.price || 0, // Price for main unit
+    quantity: initialData?.quantity || 0, // Quantity of main unit
+    barcode: initialData?.barcode || '',
+    categoryIconName: getIconName(initialData?.categoryIcon) || 'Pill',
+    unitType: initialData?.unitType || 'قطعة', // e.g., 'علبة'
+    subUnitType: initialData?.subUnitType || '', // e.g., 'شريط'
+    subUnitsPerUnit: initialData?.subUnitsPerUnit || undefined, // e.g., 2
   });
   const [isLoading, setIsLoading] = React.useState(false);
 
@@ -71,7 +75,10 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: name === 'price' || name === 'quantity' ? parseFloat(value) || 0 : value,
+       [name]: name === 'price' ? parseFloat(value) || 0
+             : name === 'quantity' ? parseFloat(value) || 0 // Allow float for quantity
+             : name === 'subUnitsPerUnit' ? parseInt(value) || undefined
+             : value,
     }));
   };
 
@@ -79,90 +86,122 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
     e.preventDefault();
     setIsLoading(true);
     try {
-      const categoryIcon = getIconComponent(formData.categoryIconName); // Get component from name
-      // Prepare data, removing the temporary categoryIconName
-      const { categoryIconName, ...dataToSend } = formData;
+      const categoryIcon = getIconComponent(formData.categoryIconName);
+       // Prepare data, ensuring subUnitType is cleared if subUnitsPerUnit is not set
+       const dataToSend = { ...formData };
+       if (!dataToSend.subUnitsPerUnit || dataToSend.subUnitsPerUnit <= 0) {
+           dataToSend.subUnitType = ''; // Clear sub-unit type if count is invalid/missing
+           dataToSend.subUnitsPerUnit = undefined;
+       }
+        // Remove the temporary categoryIconName
+        const { categoryIconName, ...finalData } = dataToSend;
+
       const productData: Omit<Product, 'id'> | Product = initialData
-        ? { ...initialData, ...dataToSend, categoryIcon }
-        : { ...dataToSend, categoryIcon };
+        ? { ...initialData, ...finalData, categoryIcon }
+        : { ...finalData, categoryIcon };
 
       await onSubmit(productData);
       onClose(); // Close dialog on success
     } catch (error) {
         console.error("Form submission error:", error);
-        // Optionally show an error toast here
+        toast({ title: "خطأ", description: "فشل حفظ بيانات المنتج.", variant: "destructive" });
     } finally {
         setIsLoading(false);
     }
   };
 
-  // Helper to get icon name from component (simple implementation)
-  function getIconName(IconComponent?: React.ComponentType<any>): string | undefined {
+  // Helper functions for icons (remain the same)
+   function getIconName(IconComponent?: React.ComponentType<any>): string | undefined {
     if (IconComponent === Pill) return 'Pill';
     if (IconComponent === Baby) return 'Baby';
     if (IconComponent === SprayCan) return 'SprayCan';
     if (IconComponent === Activity) return 'Activity';
     return undefined;
   }
-
-  // Helper to get icon component from name
     function getIconComponent(name?: string): React.ComponentType<any> | undefined {
     switch (name) {
       case 'Pill': return Pill;
       case 'Baby': return Baby;
       case 'SprayCan': return SprayCan;
       case 'Activity': return Activity;
-      default: return Pill; // Default to Pill if unknown or undefined
+      default: return Pill;
     }
   }
-
-  const categoryIcons = [
+    const categoryIcons = [
       { name: 'Pill', label: 'أقراص/حبوب', Icon: Pill },
       { name: 'Baby', label: 'مستلزمات أطفال', Icon: Baby },
       { name: 'SprayCan', label: 'بخاخ/شراب', Icon: SprayCan },
       { name: 'Activity', label: 'مكملات/فيتامينات', Icon: Activity },
     ];
+     const { toast } = useToast();
 
 
   return (
+     // Increased max-width for the form
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <Label htmlFor="nameAr">الاسم (عربي)</Label>
-        <Input id="nameAr" name="nameAr" value={formData.nameAr} onChange={handleChange} required />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+             <Label htmlFor="nameAr">الاسم (عربي)</Label>
+             <Input id="nameAr" name="nameAr" value={formData.nameAr} onChange={handleChange} required />
+          </div>
+          <div>
+             <Label htmlFor="nameEn">الاسم (إنجليزي)</Label>
+             <Input id="nameEn" name="nameEn" value={formData.nameEn} onChange={handleChange} required />
+          </div>
+          <div>
+            <Label htmlFor="barcode">الباركود</Label>
+            <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleChange} />
+          </div>
+          <div>
+             <Label htmlFor="categoryIconName">أيقونة الفئة</Label>
+             <select
+                id="categoryIconName"
+                name="categoryIconName"
+                value={formData.categoryIconName}
+                onChange={handleChange}
+                className="w-full mt-1 p-2 border rounded-md bg-background text-foreground"
+                required
+            >
+                {categoryIcons.map(({ name, label }) => (
+                    <option key={name} value={name}>{label}</option>
+                ))}
+             </select>
+          </div>
+            <div>
+                <Label htmlFor="unitType">الوحدة الرئيسية</Label>
+                <Input id="unitType" name="unitType" placeholder="مثل: علبة, زجاجة, حبة..." value={formData.unitType} onChange={handleChange} required />
+            </div>
+             <div>
+                <Label htmlFor="price">سعر الوحدة الرئيسية (ر.س)</Label>
+                <Input id="price" name="price" type="number" step="0.01" min="0" value={formData.price} onChange={handleChange} required />
+            </div>
+             <div>
+                <Label htmlFor="quantity">كمية الوحدة الرئيسية</Label>
+                <Input id="quantity" name="quantity" type="number" step="any" min="0" value={formData.quantity} onChange={handleChange} required />
+            </div>
+            <div> {/* Placeholder to balance grid or add another field */} </div>
+
       </div>
-      <div>
-        <Label htmlFor="nameEn">الاسم (إنجليزي)</Label>
-        <Input id="nameEn" name="nameEn" value={formData.nameEn} onChange={handleChange} required />
-      </div>
-       <div>
-         <Label htmlFor="barcode">الباركود</Label>
-         <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleChange} />
-       </div>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-            <Label htmlFor="price">السعر (ر.س)</Label>
-            <Input id="price" name="price" type="number" step="0.01" value={formData.price} onChange={handleChange} required />
+
+       {/* Sub-unit section */}
+        <div className="border-t pt-4 mt-4 space-y-4">
+             <h4 className="text-md font-medium text-muted-foreground">الوحدة الفرعية (اختياري)</h4>
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                 <div>
+                    <Label htmlFor="subUnitType">الوحدة الفرعية</Label>
+                    <Input id="subUnitType" name="subUnitType" placeholder="مثل: شريط, حبة..." value={formData.subUnitType} onChange={handleChange} />
+                 </div>
+                 <div>
+                    <Label htmlFor="subUnitsPerUnit">عدد الوحدات الفرعية / الرئيسية</Label>
+                    <Input id="subUnitsPerUnit" name="subUnitsPerUnit" type="number" min="1" step="1" placeholder="مثل: 2" value={formData.subUnitsPerUnit || ''} onChange={handleChange} />
+                 </div>
+            </div>
+             <p className="text-xs text-muted-foreground">
+                إذا كان المنتج يباع بوحدة أصغر (مثل شريط داخل علبة)، أدخل اسم الوحدة الفرعية وعددها داخل الوحدة الرئيسية.
+             </p>
         </div>
-        <div>
-            <Label htmlFor="quantity">الكمية</Label>
-            <Input id="quantity" name="quantity" type="number" value={formData.quantity} onChange={handleChange} required />
-        </div>
-      </div>
-       <div>
-        <Label htmlFor="categoryIconName">أيقونة الفئة</Label>
-        <select
-            id="categoryIconName"
-            name="categoryIconName"
-            value={formData.categoryIconName}
-            onChange={handleChange}
-            className="w-full mt-1 p-2 border rounded-md bg-background text-foreground" // Basic select styling
-            required
-        >
-            {categoryIcons.map(({ name, label }) => (
-                <option key={name} value={name}>{label}</option>
-            ))}
-        </select>
-      </div>
+
+
       <DialogFooter>
         <DialogClose asChild>
           <Button type="button" variant="outline" onClick={onClose}>إلغاء</Button>
@@ -259,13 +298,25 @@ export default function ProductsPage() {
     {
       accessorKey: "nameAr",
       header: "الاسم (عربي)",
-      size: 200,
+      size: 180, // Adjust size
     },
      {
         accessorKey: "barcode",
         header: "الباركود",
         cell: ({ row }) => row.original.barcode || '-', // Display barcode or dash
-        size: 150,
+        size: 120, // Adjust size
+     },
+     {
+       accessorKey: "unitType",
+       header: "الوحدة",
+       cell: ({ row }) => {
+            const p = row.original;
+            if (p.subUnitType && p.subUnitsPerUnit) {
+                return `${p.unitType} (${p.subUnitsPerUnit} ${p.subUnitType})`;
+            }
+            return p.unitType;
+       },
+       size: 100, // Adjust size
      },
     {
       accessorKey: "price",
@@ -276,6 +327,11 @@ export default function ProductsPage() {
     {
       accessorKey: "quantity",
       header: "الكمية",
+       cell: ({ row }) => {
+            // Display quantity with appropriate precision if fractional
+            const qty = row.original.quantity;
+            return Number.isInteger(qty) ? qty : qty.toFixed(2);
+        },
       size: 80,
     },
     {
@@ -454,7 +510,7 @@ export default function ProductsPage() {
             </div>
 
              {/* Dialog Content for Add/Edit */}
-            <DialogContent className="sm:max-w-md"> {/* Wider dialog */}
+            <DialogContent className="sm:max-w-xl"> {/* Wider dialog for more fields */}
                 <DialogHeader>
                  <DialogTitle>{editingProduct ? 'تعديل المنتج' : 'إضافة منتج جديد'}</DialogTitle>
                 </DialogHeader>

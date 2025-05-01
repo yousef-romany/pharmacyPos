@@ -1,6 +1,7 @@
 
-import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction } from '@/lib/types';
-import { Pill, Baby, SprayCan, Activity, Building, User } from 'lucide-react';
+
+import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem } from '@/lib/types';
+import { Pill, Baby, SprayCan, Activity } from 'lucide-react';
 
 // --- Products Data ---
 let sampleProducts: Product[] = [
@@ -8,19 +9,25 @@ let sampleProducts: Product[] = [
     id: 'prod-001',
     nameAr: 'بنادول اكسترا',
     nameEn: 'Panadol Extra',
-    price: 15.50,
-    quantity: 150,
+    price: 15.50, // Price per box
+    quantity: 150, // Boxes in stock
     categoryIcon: Pill,
-    barcode: '6281060000010' // Example barcode
+    barcode: '6281060000010',
+    unitType: 'علبة', // Main unit
+    subUnitType: 'شريط', // Sub unit
+    subUnitsPerUnit: 2, // 2 strips per box
   },
   {
     id: 'prod-002',
     nameAr: 'فيتامين سي فوار',
     nameEn: 'Vitamin C Effervescent',
-    price: 22.00,
+    price: 22.00, // Price per tube/box
     quantity: 80,
     categoryIcon: Activity,
-    barcode: '6281060000027' // Example barcode
+    barcode: '6281060000027',
+    unitType: 'علبة', // Main unit (e.g., a tube)
+    subUnitType: 'قرص', // Sub unit
+    subUnitsPerUnit: 10, // 10 tablets per tube
   },
   {
     id: 'prod-003',
@@ -29,7 +36,8 @@ let sampleProducts: Product[] = [
     price: 55.75,
     quantity: 45,
     categoryIcon: Baby,
-    barcode: '6281060000034' // Example barcode
+    barcode: '6281060000034',
+    unitType: 'علبة', // Only main unit
   },
   {
     id: 'prod-004',
@@ -38,16 +46,20 @@ let sampleProducts: Product[] = [
     price: 30.00,
     quantity: 60,
     categoryIcon: SprayCan,
-    barcode: '6281060000041' // Example barcode
+    barcode: '6281060000041',
+    unitType: 'بخاخ', // Only main unit
   },
   {
     id: 'prod-005',
     nameAr: 'أقراص مسكنة للألم',
     nameEn: 'Pain Relief Tablets',
-    price: 12.25,
-    quantity: 200,
+    price: 12.25, // Price per box
+    quantity: 200, // Boxes in stock
     categoryIcon: Pill,
-    barcode: '6281060000058' // Example barcode
+    barcode: '6281060000058',
+    unitType: 'علبة',
+    subUnitType: 'شريط',
+    subUnitsPerUnit: 3, // 3 strips per box
   },
   {
     id: 'prod-006',
@@ -56,7 +68,8 @@ let sampleProducts: Product[] = [
     price: 40.00,
     quantity: 90,
     categoryIcon: Activity,
-    barcode: '6281060000065' // Example barcode
+    barcode: '6281060000065',
+    unitType: 'علبة', // Only main unit
   },
     {
     id: 'prod-007',
@@ -65,7 +78,8 @@ let sampleProducts: Product[] = [
     price: 25.50,
     quantity: 70,
     categoryIcon: Baby,
-    barcode: '6281060000072' // Example barcode
+    barcode: '6281060000072',
+    unitType: 'أنبوب', // Only main unit
   },
   {
     id: 'prod-008',
@@ -73,8 +87,9 @@ let sampleProducts: Product[] = [
     nameEn: 'Cough Syrup',
     price: 18.00,
     quantity: 110,
-    categoryIcon: SprayCan, // Using SprayCan as a placeholder, could be Bottle icon if available
-    barcode: '6281060000089' // Example barcode
+    categoryIcon: SprayCan, // Placeholder, could be Bottle icon
+    barcode: '6281060000089',
+    unitType: 'زجاجة', // Only main unit
   },
 ];
 
@@ -100,10 +115,16 @@ export async function getProductByBarcode(barcode: string): Promise<Product | un
 export async function addProduct(productData: Omit<Product, 'id'>): Promise<Product> {
   await new Promise(resolve => setTimeout(resolve, 50));
   const newProduct: Product = {
-    ...productData,
     id: `prod-${Date.now().toString()}-${Math.random().toString(16).substring(2, 8)}`, // Generate unique ID
-     categoryIcon: productData.categoryIcon || Pill, // Default icon
-     barcode: productData.barcode || '', // Add barcode
+    nameAr: productData.nameAr,
+    nameEn: productData.nameEn,
+    price: productData.price || 0,
+    quantity: productData.quantity || 0,
+    categoryIcon: productData.categoryIcon || Pill, // Default icon
+    barcode: productData.barcode || '', // Add barcode
+    unitType: productData.unitType || 'قطعة', // Default unit type
+    subUnitType: productData.subUnitType,
+    subUnitsPerUnit: productData.subUnitsPerUnit,
   };
   sampleProducts.push(newProduct);
   console.log("Added Product:", newProduct);
@@ -116,16 +137,34 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
   const index = sampleProducts.findIndex(p => p.id === id);
   if (index === -1) return null;
 
-  // Ensure quantity doesn't go below zero if updated directly
-   const currentProduct = sampleProducts[index];
-   const updatedProduct = { ...currentProduct, ...updates };
-   if (updatedProduct.quantity < 0) {
-        updatedProduct.quantity = 0; // Prevent negative stock
+  // Update the product, ensuring quantity is handled correctly (potentially fractional)
+  const currentProduct = sampleProducts[index];
+  let updatedProduct = { ...currentProduct, ...updates };
+
+   // Ensure quantity is a number and not negative. Allow fractional quantities.
+  if (typeof updatedProduct.quantity === 'number' && updatedProduct.quantity < 0) {
+    updatedProduct.quantity = 0;
+  } else if (typeof updatedProduct.quantity !== 'number') {
+      // If quantity update is not a valid number, keep the original
+      updatedProduct.quantity = currentProduct.quantity;
+  }
+
+  // Ensure subUnitsPerUnit is handled if updated
+   if (updates.subUnitsPerUnit !== undefined) {
+       updatedProduct.subUnitsPerUnit = updates.subUnitsPerUnit > 0 ? updates.subUnitsPerUnit : undefined;
+       if (!updatedProduct.subUnitsPerUnit) {
+           updatedProduct.subUnitType = undefined; // Clear sub-unit type if count is invalid/zero
+       }
+   }
+   // Ensure price is non-negative
+   if (typeof updatedProduct.price === 'number' && updatedProduct.price < 0) {
+      updatedProduct.price = 0;
    }
 
+
   sampleProducts[index] = updatedProduct;
-   console.log("Updated Product:", sampleProducts[index]);
-   // console.log("Current Products:", sampleProducts); // Optional: Log full list
+  console.log("Updated Product:", sampleProducts[index]);
+  // console.log("Current Products:", sampleProducts); // Optional: Log full list
   return sampleProducts[index];
 }
 
@@ -273,11 +312,14 @@ let samplePurchases: PurchaseTransaction[] = [
 
 export async function getSales(): Promise<SaleTransaction[]> {
   await new Promise(resolve => setTimeout(resolve, 50));
-  return [...sampleSales].sort((a, b) => b.date.getTime() - a.date.getTime()); // Return sorted copy
+  // Sort sales by date descending before returning
+  return [...sampleSales].sort((a, b) => b.date.getTime() - a.date.getTime());
 }
 
+// Function to add a sale and update product quantities
 export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<SaleTransaction> {
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 50)); // Simulate delay
+
     const newSale: SaleTransaction = {
         ...saleData,
         id: `sale-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`, // Unique sale ID
@@ -285,8 +327,34 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
     };
     sampleSales.push(newSale);
     console.log("Added Sale:", newSale);
+
+    // --- Update Product Quantities ---
+    await Promise.all(newSale.items.map(async (item: SaleTransactionItem) => {
+        const product = await getProductById(item.productId);
+        if (product) {
+            let quantityToDeduct = item.quantity; // Quantity of the sold unit
+
+            // If a sub-unit was sold, convert the quantity to the equivalent main unit quantity
+            if (item.soldUnitType === 'sub' && product.subUnitsPerUnit && product.subUnitsPerUnit > 0) {
+                quantityToDeduct = item.quantity / product.subUnitsPerUnit;
+            }
+
+            // Calculate the new quantity (can be fractional)
+            const newQuantity = product.quantity - quantityToDeduct;
+
+            // Update the product in the data source
+            await updateProduct(item.productId, { quantity: newQuantity });
+            console.log(`Updated product ${item.productId} quantity to ${newQuantity}`);
+        } else {
+            console.warn(`Product with ID ${item.productId} not found during sale update.`);
+            // Handle cases where product might not exist (e.g., log error)
+        }
+    }));
+    console.log("Product quantities updated after sale.");
+
     return newSale;
 }
+
 
 export async function getPurchases(): Promise<PurchaseTransaction[]> {
   await new Promise(resolve => setTimeout(resolve, 50));
@@ -303,18 +371,28 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id'>)
     samplePurchases.push(newPurchase);
     console.log("Added Purchase:", newPurchase);
 
-    // Update product quantities after purchase
-     await Promise.all(newPurchase.items.map(async (item) => {
+    // Update product quantities after purchase (assuming purchase items are always main units)
+     await Promise.all(newPurchase.items.map(async (item: PurchaseTransactionItem) => {
         const product = await getProductById(item.productId);
         if (product) {
             const newQuantity = product.quantity + item.quantity;
             await updateProduct(item.productId, { quantity: newQuantity });
         } else {
             console.warn(`Product with ID ${item.productId} not found during purchase update.`);
-            // Optionally handle adding the product if it doesn't exist, though this might indicate an issue.
+            // Handle adding the product if it doesn't exist (or log error)
+            // For now, we assume products exist before purchase
         }
      }));
     console.log("Product quantities updated after purchase.");
 
     return newPurchase;
 }
+
+// --- Helper to get product name by ID (for displaying in invoices) ---
+// In a real app, this might be optimized or data joined earlier
+export async function getProductNameById(id: string): Promise<string> {
+    const product = await getProductById(id);
+    return product ? product.nameAr : `منتج غير معروف (${id.substring(0,6)})`;
+}
+
+

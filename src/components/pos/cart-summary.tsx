@@ -4,7 +4,7 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { ShoppingCart, CreditCard, Trash2, Loader2 } from 'lucide-react'; // Added Loader2
+import { ShoppingCart, CreditCard, Trash2, Loader2, Printer } from 'lucide-react'; // Added Printer
 import { useCart } from '@/hooks/use-cart';
 import { CartItem } from './cart-item';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -19,18 +19,109 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { addSale, updateProduct } from '@/lib/data'; // Import addSale and updateProduct
-import type { SaleTransaction } from '@/lib/types'; // Import SaleTransaction type
+import { addSale, updateProduct, getProductNameById } from '@/lib/data'; // Import addSale, updateProduct, getProductNameById
+import type { SaleTransaction, SaleTransactionItem } from '@/lib/types'; // Import SaleTransaction type
 
 export function CartSummary() {
   const { items, getTotalPrice, getItemCount, clearCart } = useCart();
   const { toast } = useToast();
   const [isClient, setIsClient] = React.useState(false);
   const [isCheckingOut, setIsCheckingOut] = React.useState(false); // Checkout loading state
+  const [lastSale, setLastSale] = React.useState<SaleTransaction | null>(null); // State to hold last sale for printing
 
   React.useEffect(() => {
     setIsClient(true);
   }, []);
+
+
+  // Basic print function for the last sale invoice
+  const handlePrintInvoice = async (saleToPrint: SaleTransaction) => {
+    if (!saleToPrint) return;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+        toast({ title: "خطأ", description: "فشل فتح نافذة الطباعة. تحقق من إعدادات المتصفح.", variant: "destructive" });
+        return;
+    }
+
+    // Fetch product names for the invoice items
+     let itemRowsHtml = '';
+     for (const item of saleToPrint.items) {
+        const productName = await getProductNameById(item.productId);
+        const unitLabel = item.soldUnitType === 'sub'
+                ? items.find(cartItem => cartItem.id === item.productId)?.subUnitType || 'وحدة فرعية'
+                : items.find(cartItem => cartItem.id === item.productId)?.unitType || 'وحدة رئيسية';
+
+         itemRowsHtml += `
+             <tr>
+                 <td>${productName}</td>
+                 <td>${unitLabel}</td>
+                 <td>${item.quantity}</td>
+                 <td>${item.price.toFixed(2)}</td>
+                 <td>${(item.quantity * item.price).toFixed(2)}</td>
+             </tr>
+         `;
+     }
+
+
+    printWindow.document.write(`
+     <html>
+     <head>
+        <title>فاتورة بيع - ${saleToPrint.id}</title>
+         <style>
+             @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+             body { font-family: 'Cairo', sans-serif; direction: rtl; padding: 20px; font-size: 12px; }
+             table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+             th, td { border: 1px solid #ddd; padding: 6px; text-align: right; }
+             th { background-color: #f2f2f2; font-weight: bold; }
+             .total { font-weight: bold; font-size: 1.1em; margin-top: 15px; text-align: left; }
+             .header { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; text-align: center;}
+             .header h2 { margin: 0; font-size: 1.5em; }
+             .info p { margin: 3px 0; }
+             @media print {
+                 body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                 button { display: none; }
+             }
+         </style>
+     </head>
+     <body>
+         <div class="header">
+             <h2>صيدليتي</h2>
+             <p>فاتورة بيع</p>
+         </div>
+         <div class="info">
+             <p><strong>رقم الفاتورة:</strong> ${saleToPrint.id}</p>
+             <p><strong>التاريخ:</strong> ${saleToPrint.date.toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short'})}</p>
+             <p><strong>العميل:</strong> ${saleToPrint.customerId || 'عميل نقدي'}</p> {/* TODO: Add customer name lookup */}
+         </div>
+         <table>
+             <thead>
+                 <tr>
+                     <th>المنتج</th>
+                     <th>الوحدة</th>
+                     <th>الكمية</th>
+                     <th>السعر (ر.س)</th>
+                     <th>الإجمالي (ر.س)</th>
+                 </tr>
+             </thead>
+             <tbody>
+                 ${itemRowsHtml}
+             </tbody>
+         </table>
+         <div class="total">
+             <span>إجمالي الفاتورة: </span>
+             <span>${saleToPrint.totalAmount.toFixed(2)} ر.س</span>
+         </div>
+          <button onclick="window.print()">طباعة</button>
+          <button onclick="window.close()">إغلاق</button>
+     </body>
+     </html>
+    `);
+    printWindow.document.close();
+    printWindow.focus(); // Focus the new window (might not work depending on browser)
+     // Optional: Automatically trigger print dialog
+    // setTimeout(() => printWindow.print(), 500);
+  };
 
 
   const handleCheckout = async () => {
@@ -39,42 +130,45 @@ export function CartSummary() {
         return;
     }
     setIsCheckingOut(true);
+    setLastSale(null); // Clear previous sale before new checkout
+
     try {
       // 1. Prepare sale transaction data
+      const saleItems: SaleTransactionItem[] = items.map(item => ({
+        productId: item.id,
+        quantity: item.cartQuantity,
+        price: item.pricePerSelectedUnit, // Use the calculated price per selected unit
+        soldUnitType: item.selectedUnitType // Record whether 'main' or 'sub' unit was sold
+      }));
+
       const saleData: Omit<SaleTransaction, 'id'> = {
         // customerId: selectedCustomer?.id, // Optional: Add customer selection later
-        items: items.map(item => ({
-          productId: item.id,
-          quantity: item.cartQuantity,
-          price: item.price, // Price at the time of sale
-        })),
+        items: saleItems,
         totalAmount: getTotalPrice(),
         date: new Date(),
       };
 
-      // 2. (Simulated) Save the sale transaction
+      // 2. Save the sale transaction (which now also updates stock in lib/data.ts)
       const newSale = await addSale(saleData);
-      console.log('Sale created:', newSale);
+      console.log('Sale created and stock updated:', newSale);
+      setLastSale(newSale); // Store the completed sale for printing
 
-      // 3. Update product quantities in stock
-      // Use Promise.all for parallel updates
-      await Promise.all(items.map(item => {
-          const newQuantity = item.quantity - item.cartQuantity; // Calculate remaining stock
-          return updateProduct(item.id, { quantity: newQuantity });
-      }));
-      console.log('Product quantities updated.');
-
-
-      // 4. Clear the cart
+      // 3. Clear the cart
       clearCart();
 
-      // 5. Show success message
+      // 4. Show success message with print option
       toast({
         title: "تمت عملية البيع بنجاح",
-        description: `تم إنشاء الفاتورة رقم ${newSale.id} بمبلغ ${newSale.totalAmount.toFixed(2)} ر.س.`,
+        description: `فاتورة رقم ${newSale.id} | المبلغ ${newSale.totalAmount.toFixed(2)} ر.س`,
+        action: (
+           <Button variant="outline" size="sm" onClick={() => handlePrintInvoice(newSale)}>
+                <Printer className="ml-2 h-4 w-4" />
+                طباعة الفاتورة
+            </Button>
+        ),
       });
 
-      // Optionally trigger printing or other post-checkout actions here
+      // No need to update product quantities here as it's handled within addSale
 
     } catch (error) {
       console.error("Checkout failed:", error);
@@ -143,8 +237,9 @@ export function CartSummary() {
             </div>
           ) : (
             <div className="space-y-1">
-              {items.map((item) => (
-                <CartItem key={item.id} item={item} />
+              {items.map((item, index) => (
+                // Need a unique key combining id and unit type
+                <CartItem key={`${item.id}-${item.selectedUnitType}-${index}`} item={item} />
               ))}
             </div>
           )}
@@ -167,9 +262,9 @@ export function CartSummary() {
                     <Trash2 className="ml-2 h-4 w-4" />
                     تفريغ السلة
                   </Button>
-                {/* Keep checkout button outside SheetClose if we handle closing manually on success */}
+                 {/* Keep checkout button outside SheetClose if we handle closing manually on success */}
                   <Button
-                    className="flex-1 bg-accent hover:bg-accent/90 text-accent-foreground"
+                    className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground" // Changed to primary color
                     onClick={handleCheckout}
                     disabled={isCheckingOut} // Disable while checking out
                   >
@@ -183,6 +278,13 @@ export function CartSummary() {
                  {/* <SheetClose asChild> needed if button should close sheet directly */}
 
               </div>
+                {/* Optional: Add a button to print the last invoice if available */}
+                 {lastSale && (
+                    <Button variant="secondary" size="sm" className="w-full mt-2" onClick={() => handlePrintInvoice(lastSale)}>
+                        <Printer className="ml-2 h-4 w-4" />
+                        طباعة الفاتورة الأخيرة ({lastSale.id.substring(0, 8)}...)
+                    </Button>
+                )}
             </div>
           </SheetFooter>
         )}
@@ -190,3 +292,4 @@ export function CartSummary() {
     </Sheet>
   );
 }
+
