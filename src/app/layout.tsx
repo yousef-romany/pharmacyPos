@@ -16,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ar" dir="rtl"> {/* Set language to Arabic and direction to RTL */}
+    <html lang="ar" dir="rtl">
       <body className={inter.className}> {/* Use Inter font class */}
         {children}
         {/* <Toaster /> */} {/* Toaster can be added within specific layouts or pages */}
