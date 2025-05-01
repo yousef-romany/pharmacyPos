@@ -1,6 +1,10 @@
 import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User, ProductExpiryInfo, InventoryReportItem, PaymentMethod, PaymentStatus, UserRole } from '@/lib/types';
 import { Pill, Baby, SprayCan, Activity } from 'lucide-react';
-import { differenceInDays, addDays, isBefore, isSameDay } from 'date-fns';
+import { differenceInDays, addDays, isBefore, isSameDay, startOfDay, endOfDay } from 'date-fns'; // Added startOfDay, endOfDay
+
+// --- In-Memory Data Store (Replace with actual database/API calls) ---
+// This is a simple in-memory store for demonstration.
+// Data will reset on server restart. Use a persistent store in a real application.
 
 // --- Products Data ---
 let sampleProducts: Product[] = [
@@ -10,16 +14,16 @@ let sampleProducts: Product[] = [
     nameEn: 'Panadol Extra',
     manufacturer: 'GSK',
     concentration: '500mg Paracetamol, 65mg Caffeine',
-    activeIngredient: 'Paracetamol, Caffeine', // Added
+    activeIngredient: 'Paracetamol, Caffeine',
     price: 15.50,
-    lastPurchaseCost: 10.50, // Added
-    quantity: 8,
+    lastPurchaseCost: 10.50,
+    quantity: 8, // Low stock example based on minStockLevel
     categoryIcon: Pill,
     barcode: '6281060000010',
     unitType: 'علبة',
     subUnitType: 'شريط',
     subUnitsPerUnit: 2,
-    expiryDate: addDays(new Date(), 60),
+    expiryDate: addDays(new Date(), 60), // Nearing expiry
     minStockLevel: 10,
     discountRate: 5,
   },
@@ -29,9 +33,9 @@ let sampleProducts: Product[] = [
     nameEn: 'Vitamin C Effervescent',
     manufacturer: 'Generic Pharma',
     concentration: '1000mg Vitamin C',
-    activeIngredient: 'Ascorbic Acid', // Added
+    activeIngredient: 'Ascorbic Acid',
     price: 22.00,
-    lastPurchaseCost: 16.00, // Added
+    lastPurchaseCost: 16.00,
     quantity: 80,
     categoryIcon: Activity,
     barcode: '6281060000027',
@@ -46,14 +50,13 @@ let sampleProducts: Product[] = [
     nameAr: 'حليب أطفال المرحلة 1',
     nameEn: 'Baby Milk Stage 1',
     manufacturer: 'Nestle',
-    // No active ingredient for milk
     price: 55.75,
-    lastPurchaseCost: 45.00, // Added
+    lastPurchaseCost: 45.00,
     quantity: 0, // Out of stock
     categoryIcon: Baby,
     barcode: '6281060000034',
     unitType: 'علبة',
-    expiryDate: addDays(new Date(), 15),
+    expiryDate: addDays(new Date(), 15), // Nearing expiry
     minStockLevel: 15,
   },
   {
@@ -62,14 +65,14 @@ let sampleProducts: Product[] = [
     nameEn: 'Nasal Spray',
     manufacturer: 'Pharma Co.',
     concentration: '0.05% Oxymetazoline',
-    activeIngredient: 'Oxymetazoline', // Added
+    activeIngredient: 'Oxymetazoline',
     price: 30.00,
-    lastPurchaseCost: 20.00, // Added
+    lastPurchaseCost: 20.00,
     quantity: 60,
     categoryIcon: SprayCan,
     barcode: '6281060000041',
     unitType: 'بخاخ',
-    expiryDate: addDays(new Date(), -10),
+    expiryDate: addDays(new Date(), -10), // Expired
     minStockLevel: 10,
   },
   {
@@ -78,9 +81,9 @@ let sampleProducts: Product[] = [
     nameEn: 'Pain Relief Tablets',
     manufacturer: 'Jamjoom Pharma',
     concentration: '400mg Ibuprofen',
-    activeIngredient: 'Ibuprofen', // Added
+    activeIngredient: 'Ibuprofen',
     price: 12.25,
-    lastPurchaseCost: 8.00, // Added
+    lastPurchaseCost: 8.00,
     quantity: 200,
     categoryIcon: Pill,
     barcode: '6281060000058',
@@ -95,10 +98,10 @@ let sampleProducts: Product[] = [
     nameAr: 'مكمل غذائي حديد',
     nameEn: 'Iron Supplement',
     manufacturer: 'VitaHealth',
-    activeIngredient: 'Ferrous Sulfate', // Added
+    activeIngredient: 'Ferrous Sulfate',
     price: 40.00,
-    lastPurchaseCost: 28.00, // Added
-    quantity: 5,
+    lastPurchaseCost: 28.00,
+    quantity: 5, // Low stock example
     categoryIcon: Activity,
     barcode: '6281060000065',
     unitType: 'علبة',
@@ -110,9 +113,9 @@ let sampleProducts: Product[] = [
     nameAr: 'كريم حفاضات للأطفال',
     nameEn: 'Baby Diaper Cream',
     manufacturer: 'Sudocrem',
-    activeIngredient: 'Zinc Oxide', // Added
+    activeIngredient: 'Zinc Oxide',
     price: 25.50,
-    lastPurchaseCost: 18.00, // Added
+    lastPurchaseCost: 18.00,
     quantity: 70,
     categoryIcon: Baby,
     barcode: '6281060000072',
@@ -126,9 +129,9 @@ let sampleProducts: Product[] = [
     nameAr: 'شراب سعال',
     nameEn: 'Cough Syrup',
     manufacturer: 'Prospan',
-    activeIngredient: 'Ivy Leaf Extract', // Added
+    activeIngredient: 'Ivy Leaf Extract',
     price: 18.00,
-    lastPurchaseCost: 12.50, // Added
+    lastPurchaseCost: 12.50,
     quantity: 110,
     categoryIcon: SprayCan,
     barcode: '6281060000089',
@@ -170,133 +173,6 @@ let sampleProducts: Product[] = [
   },
 ];
 
-// Simulate fetching products (e.g., from an API or database)
-export async function getProducts(): Promise<Product[]> {
-  // In a real app, this would fetch data from a source
-  await new Promise(resolve => setTimeout(resolve, 50)); // Simulate network delay
-   // Parse expiry dates if they are stored as strings
-   return sampleProducts.map(p => ({
-     ...p,
-     lastPurchaseCost: p.lastPurchaseCost ?? p.price * 0.7, // Estimate cost if missing
-     expiryDate: p.expiryDate ? new Date(p.expiryDate) : undefined, // Ensure expiryDate is a Date object
-   }));
-}
-
-export async function getProductById(id: string): Promise<Product | undefined> {
-  await new Promise(resolve => setTimeout(resolve, 20));
-  const product = sampleProducts.find(p => p.id === id);
-  return product ? {
-      ...product,
-      lastPurchaseCost: product.lastPurchaseCost ?? product.price * 0.7, // Estimate cost if missing
-      expiryDate: product.expiryDate ? new Date(product.expiryDate) : undefined
-  } : undefined;
-}
-
-// Simulate finding product by barcode (in real app, query DB/API)
-export async function getProductByBarcode(barcode: string): Promise<Product | undefined> {
-    await new Promise(resolve => setTimeout(resolve, 20));
-    const product = sampleProducts.find(p => p.barcode === barcode);
-     return product ? {
-         ...product,
-         lastPurchaseCost: product.lastPurchaseCost ?? product.price * 0.7, // Estimate cost if missing
-         expiryDate: product.expiryDate ? new Date(product.expiryDate) : undefined
-     } : undefined;
-}
-
-
-export async function addProduct(productData: Omit<Product, 'id'>): Promise<Product> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  const newProduct: Product = {
-    id: `prod-${Date.now().toString()}-${Math.random().toString(16).substring(2, 8)}`, // Generate unique ID
-    nameAr: productData.nameAr,
-    nameEn: productData.nameEn,
-    manufacturer: productData.manufacturer,
-    concentration: productData.concentration,
-    activeIngredient: productData.activeIngredient, // Added
-    price: productData.price || 0,
-    lastPurchaseCost: productData.lastPurchaseCost, // Store initial purchase cost if provided
-    quantity: productData.quantity || 0,
-    categoryIcon: productData.categoryIcon || Pill, // Default icon
-    barcode: productData.barcode || '',
-    unitType: productData.unitType || 'قطعة',
-    subUnitType: productData.subUnitType,
-    subUnitsPerUnit: productData.subUnitsPerUnit,
-    discountRate: productData.discountRate,
-    expiryDate: productData.expiryDate ? new Date(productData.expiryDate) : undefined,
-    minStockLevel: productData.minStockLevel,
-  };
-  sampleProducts.push(newProduct);
-  console.log("Added Product:", newProduct);
-  console.log("Current Products:", sampleProducts);
-  return newProduct;
-}
-
-export async function updateProduct(id: string, updates: Partial<Omit<Product, 'id'>>): Promise<Product | null> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  const index = sampleProducts.findIndex(p => p.id === id);
-  if (index === -1) return null;
-
-  const currentProduct = sampleProducts[index];
-  // Ensure date is properly handled if updated
-  const updateData = { ...updates };
-  if (updateData.expiryDate) {
-      updateData.expiryDate = new Date(updateData.expiryDate);
-  }
-
-  let updatedProduct = { ...currentProduct, ...updateData };
-
-  // --- Validation and Cleaning ---
-  // Ensure quantity is non-negative
-  if (typeof updatedProduct.quantity === 'number' && updatedProduct.quantity < 0) {
-    updatedProduct.quantity = 0;
-  } else if (typeof updatedProduct.quantity !== 'number') {
-    updatedProduct.quantity = currentProduct.quantity;
-  }
-
-  // Ensure subUnitsPerUnit is handled
-  if (updates.subUnitsPerUnit !== undefined) {
-    updatedProduct.subUnitsPerUnit = updates.subUnitsPerUnit > 0 ? updates.subUnitsPerUnit : undefined;
-    if (!updatedProduct.subUnitsPerUnit) {
-      updatedProduct.subUnitType = undefined;
-    }
-  }
-
-  // Ensure price is non-negative
-  if (typeof updatedProduct.price === 'number' && updatedProduct.price < 0) {
-    updatedProduct.price = 0;
-  }
-
-   // Ensure lastPurchaseCost is non-negative
-   if (updates.lastPurchaseCost !== undefined && typeof updates.lastPurchaseCost === 'number' && updates.lastPurchaseCost < 0) {
-      updatedProduct.lastPurchaseCost = 0;
-   }
-
-  // Ensure minStockLevel is non-negative integer or undefined
-   if (updates.minStockLevel !== undefined) {
-     updatedProduct.minStockLevel = Number.isInteger(updates.minStockLevel) && updates.minStockLevel >= 0 ? updates.minStockLevel : undefined;
-   }
-  // Ensure discountRate is between 0 and 100 or undefined
-  if (updates.discountRate !== undefined) {
-      updatedProduct.discountRate = typeof updates.discountRate === 'number' && updates.discountRate >= 0 && updates.discountRate <= 100 ? updates.discountRate : undefined;
-  }
-
-
-  sampleProducts[index] = updatedProduct;
-  console.log("Updated Product:", sampleProducts[index]);
-  return sampleProducts[index];
-}
-
-export async function deleteProduct(id: string): Promise<boolean> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  const initialLength = sampleProducts.length;
-  sampleProducts = sampleProducts.filter(p => p.id !== id);
-  const success = sampleProducts.length < initialLength;
-  console.log(`Deleted Product ${id}?`, success);
-  console.log("Current Products:", sampleProducts);
-  return success;
-}
-
-
 // --- Suppliers Data ---
 let sampleSuppliers: Supplier[] = [
   {
@@ -324,43 +200,6 @@ let sampleSuppliers: Supplier[] = [
     address: 'الدمام، طريق الخليج',
   },
 ];
-
-export async function getSuppliers(): Promise<Supplier[]> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  return [...sampleSuppliers]; // Return a copy
-}
-
-export async function addSupplier(supplierData: Omit<Supplier, 'id'>): Promise<Supplier> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  const newSupplier: Supplier = {
-    ...supplierData,
-    id: `supp-${Date.now().toString()}-${Math.random().toString(16).substring(2, 8)}`,
-  };
-  sampleSuppliers.push(newSupplier);
-   console.log("Added Supplier:", newSupplier);
-   console.log("Current Suppliers:", sampleSuppliers);
-  return newSupplier;
-}
-
-export async function updateSupplier(id: string, updates: Partial<Supplier>): Promise<Supplier | null> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  const index = sampleSuppliers.findIndex(s => s.id === id);
-  if (index === -1) return null;
-  sampleSuppliers[index] = { ...sampleSuppliers[index], ...updates };
-    console.log("Updated Supplier:", sampleSuppliers[index]);
-    console.log("Current Suppliers:", sampleSuppliers);
-  return sampleSuppliers[index];
-}
-
-export async function deleteSupplier(id: string): Promise<boolean> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  const initialLength = sampleSuppliers.length;
-  sampleSuppliers = sampleSuppliers.filter(s => s.id !== id);
-   const success = sampleSuppliers.length < initialLength;
-  console.log(`Deleted Supplier ${id}?`, success);
-  console.log("Current Suppliers:", sampleSuppliers);
-  return success;
-}
 
 // --- Customers Data ---
 let sampleCustomers: Customer[] = [
@@ -393,258 +232,17 @@ let sampleCustomers: Customer[] = [
   },
 ];
 
-export async function getCustomers(): Promise<Customer[]> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  return [...sampleCustomers.map(c => ({ ...c, balance: c.balance ?? 0 }))]; // Ensure balance is initialized
-}
+// --- Sales Transactions Data ---
+let sampleSales: SaleTransaction[] = []; // Start with empty sales
 
-export async function addCustomer(customerData: Omit<Customer, 'id'>): Promise<Customer> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  const newCustomer: Customer = {
-    ...customerData,
-    id: `cust-${Date.now().toString()}-${Math.random().toString(16).substring(2, 8)}`,
-    balance: customerData.balance ?? 0, // Initialize balance
-    // Initialize insurance fields if not provided
-    insuranceCompany: customerData.insuranceCompany || undefined,
-    policyNumber: customerData.policyNumber || undefined,
-    insuranceDiscountRate: customerData.insuranceDiscountRate || undefined,
-  };
-  sampleCustomers.push(newCustomer);
-   console.log("Added Customer:", newCustomer);
-   console.log("Current Customers:", sampleCustomers);
-  return newCustomer;
-}
-
-export async function updateCustomer(id: string, updates: Partial<Customer>): Promise<Customer | null> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  const index = sampleCustomers.findIndex(c => c.id === id);
-  if (index === -1) return null;
-  // Ensure balance and insurance rate are handled correctly
-  const updatedCustomer = { ...sampleCustomers[index], ...updates };
-   if (updates.balance !== undefined && typeof updates.balance !== 'number') {
-     updatedCustomer.balance = sampleCustomers[index].balance ?? 0;
-   }
-   if (updates.insuranceDiscountRate !== undefined) {
-       updatedCustomer.insuranceDiscountRate = typeof updates.insuranceDiscountRate === 'number' && updates.insuranceDiscountRate >= 0 && updates.insuranceDiscountRate <= 100
-           ? updates.insuranceDiscountRate
-           : undefined;
-   }
-  sampleCustomers[index] = updatedCustomer;
-   console.log("Updated Customer:", sampleCustomers[index]);
-   console.log("Current Customers:", sampleCustomers);
-  return updatedCustomer;
-}
-
-export async function deleteCustomer(id: string): Promise<boolean> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  const initialLength = sampleCustomers.length;
-  sampleCustomers = sampleCustomers.filter(c => c.id !== id);
-   const success = sampleCustomers.length < initialLength;
-  console.log(`Deleted Customer ${id}?`, success);
-  console.log("Current Customers:", sampleCustomers);
-  return success;
-}
-
-// --- Transactions (Invoices) Data ---
-let sampleSales: SaleTransaction[] = [];
+// --- Purchase Transactions Data ---
 let samplePurchases: PurchaseTransaction[] = [
     { id: 'pur-001', supplierId: 'supp-001', invoiceNumber: 'INV-SUP-1001', items: [{ productId: 'prod-001', quantity: 100, cost: 10.50 }, { productId: 'prod-005', quantity: 150, cost: 8.00 }], totalAmount: 2250.00, paymentStatus: 'paid', amountPaid: 2250.00, date: new Date(2024, 6, 14) },
     { id: 'pur-002', supplierId: 'supp-002', invoiceNumber: 'INV-SUP-1002', items: [{ productId: 'prod-003', quantity: 50, cost: 45.00 }], totalAmount: 2250.00, paymentStatus: 'partial', amountPaid: 1000.00, date: new Date(2024, 6, 13) },
     { id: 'pur-003', supplierId: 'supp-003', items: [{ productId: 'prod-008', quantity: 200, cost: 15.00 }], totalAmount: 3000.00, paymentStatus: 'unpaid', amountPaid: 0.00, date: new Date(2024, 6, 15) },
 ];
 
-export async function getSales(): Promise<SaleTransaction[]> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-  // Sort sales by date descending before returning
-  return [...sampleSales].map(s => ({
-      ...s,
-      date: new Date(s.date) // Ensure date is Date object
-    })).sort((a, b) => b.date.getTime() - a.date.getTime());
-}
-
-// Function to add a sale and update product quantities, costAtSale, and customer balance/insurance
-export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<SaleTransaction> {
-    await new Promise(resolve => setTimeout(resolve, 50)); // Simulate delay
-
-    const customer = saleData.customerId ? await getCustomerById(saleData.customerId) : undefined;
-    const insuranceRate = customer?.insuranceDiscountRate ?? 0;
-
-     // Calculate original total amount before discount and prepare items with cost
-    const calculateOriginalTotalAndPrepareItems = async (items: SaleTransactionItem[]): Promise<{ originalTotal: number; subTotal: number; preparedItems: SaleTransactionItem[] }> => {
-        let originalTotal = 0;
-        let subTotal = 0; // Total after product discount, before insurance
-        const preparedItems: SaleTransactionItem[] = [];
-        for (const item of items) {
-            const product = await getProductById(item.productId);
-             const costAtSale = product?.lastPurchaseCost; // Get cost at time of sale
-            if (product) {
-                 const originalPrice = item.soldUnitType === 'sub' && product.subUnitsPerUnit
-                     ? product.price / product.subUnitsPerUnit
-                     : product.price;
-                 originalTotal += originalPrice * item.quantity;
-                 subTotal += item.price * item.quantity; // item.price is already discounted (product discount)
-            } else {
-                 // Fallback if product details are missing, use the sale price as original
-                 originalTotal += item.price * item.quantity;
-                 subTotal += item.price * item.quantity;
-            }
-            preparedItems.push({ ...item, costAtSale });
-        }
-        return { originalTotal, subTotal, preparedItems };
-    };
-
-
-    const { originalTotal, subTotal, preparedItems } = await calculateOriginalTotalAndPrepareItems(saleData.items);
-
-     // Apply insurance discount to the subtotal (after product discounts)
-     const finalTotalAmount = subTotal * (1 - (insuranceRate / 100));
-
-
-    const newSale: SaleTransaction = {
-        customerId: saleData.customerId,
-        items: preparedItems, // Use items with costAtSale
-        totalAmount: finalTotalAmount, // Final amount after all discounts
-        subTotalAmount: subTotal, // Amount after product discount
-        paymentMethod: saleData.paymentMethod,
-        amountPaid: saleData.amountPaid,
-        id: `sale-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`, // Unique sale ID
-        date: saleData.date || new Date(), // Ensure date exists
-        originalTotalAmount: originalTotal, // Store original total before any discount
-        appliedInsuranceDiscountRate: insuranceRate, // Store the applied rate
-    };
-    sampleSales.push(newSale);
-    console.log("Added Sale:", newSale);
-
-    // --- Update Product Quantities ---
-    await Promise.all(newSale.items.map(async (item: SaleTransactionItem) => {
-        const product = await getProductById(item.productId);
-        if (product) {
-            let quantityToDeduct = item.quantity; // Quantity of the sold unit
-
-            // If a sub-unit was sold, convert the quantity to the equivalent main unit quantity
-            if (item.soldUnitType === 'sub' && product.subUnitsPerUnit && product.subUnitsPerUnit > 0) {
-                quantityToDeduct = item.quantity / product.subUnitsPerUnit;
-            }
-
-            // Calculate the new quantity (can be fractional)
-            const newQuantity = product.quantity - quantityToDeduct;
-
-            // Update the product in the data source
-            await updateProduct(item.productId, { quantity: newQuantity });
-            console.log(`Updated product ${item.productId} quantity to ${newQuantity}`);
-        } else {
-            console.warn(`Product with ID ${item.productId} not found during sale update.`);
-            // Handle cases where product might not exist (e.g., log error)
-        }
-    }));
-    console.log("Product quantities updated after sale.");
-
-    // --- Update Customer Balance if it's a debt transaction ---
-    if (newSale.customerId && newSale.paymentMethod === 'debt') {
-       // Customer balance is already updated if a customer object was passed,
-       // here we handle the debt calculation specifically for the transaction record.
-       const debtAmount = newSale.totalAmount - newSale.amountPaid; // Calculate the debt incurred from *this specific transaction*
-       if (debtAmount > 0 && customer) {
-           const newBalance = (customer.balance ?? 0) - debtAmount; // Decrease balance (more negative means more debt)
-           await updateCustomer(newSale.customerId, { balance: newBalance });
-           console.log(`Updated customer ${newSale.customerId} balance to ${newBalance} due to debt`);
-       }
-    } else if (newSale.customerId && newSale.paymentMethod !== 'debt' && newSale.amountPaid > newSale.totalAmount) {
-        // Handle overpayment potentially increasing balance (credit)
-         if (customer) {
-             const creditAmount = newSale.amountPaid - newSale.totalAmount;
-             const newBalance = (customer.balance || 0) + creditAmount;
-             await updateCustomer(newSale.customerId, { balance: newBalance });
-              console.log(`Updated customer ${newSale.customerId} balance to ${newBalance} due to overpayment.`);
-         }
-    }
-
-    return newSale;
-}
-
-
-// Function to get purchase transactions
-export async function getPurchases(): Promise<PurchaseTransaction[]> {
-  await new Promise(resolve => setTimeout(resolve, 50));
-   return [...samplePurchases].map(p => ({
-      ...p,
-      date: new Date(p.date) // Ensure date is Date object
-   })).sort((a, b) => b.date.getTime() - a.date.getTime()); // Return sorted copy
-}
-
-// Function to add a purchase transaction and update product quantities and cost
-export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id'>): Promise<PurchaseTransaction> {
-    await new Promise(resolve => setTimeout(resolve, 50));
-
-     // Calculate total amount from items cost
-     const totalAmount = purchaseData.items.reduce((sum, item) => sum + item.quantity * item.cost, 0);
-
-     // Determine payment status based on amountPaid
-     let paymentStatus: PaymentStatus;
-     if (purchaseData.amountPaid >= totalAmount) {
-         paymentStatus = 'paid';
-     } else if (purchaseData.amountPaid > 0) {
-         paymentStatus = 'partial';
-     } else {
-         paymentStatus = 'unpaid';
-     }
-
-
-    const newPurchase: PurchaseTransaction = {
-        ...purchaseData,
-        id: `pur-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`, // Unique purchase ID
-        date: purchaseData.date || new Date(), // Ensure date exists
-        totalAmount: totalAmount, // Set calculated total amount
-        paymentStatus: paymentStatus, // Set calculated payment status
-    };
-    samplePurchases.push(newPurchase);
-    console.log("Added Purchase:", newPurchase);
-
-    // Update product quantities and lastPurchaseCost after purchase
-     await Promise.all(newPurchase.items.map(async (item: PurchaseTransactionItem) => {
-        const product = await getProductById(item.productId);
-        if (product) {
-            const newQuantity = product.quantity + item.quantity;
-             // Update last purchase cost and expiry date if provided
-            const updates: Partial<Omit<Product, 'id'>> = {
-                quantity: newQuantity,
-                lastPurchaseCost: item.cost // Update the last cost
-            };
-            if (item.expiryDate) {
-                updates.expiryDate = new Date(item.expiryDate);
-            }
-
-            await updateProduct(item.productId, updates);
-            console.log(`Updated product ${item.productId}: quantity=${newQuantity}, cost=${item.cost} ${updates.expiryDate ? `, expiry=${updates.expiryDate.toLocaleDateString()}` : ''}`);
-        } else {
-            console.warn(`Product with ID ${item.productId} not found during purchase update.`);
-            // Handle adding the product if it doesn't exist (or log error)
-            // For now, we assume products exist before purchase
-        }
-     }));
-    console.log("Product quantities updated after purchase.");
-
-    // TODO: Update supplier balance/account if tracking supplier debts
-
-    return newPurchase;
-}
-
-// --- Helper to get product name by ID (for displaying in invoices) ---
-// In a real app, this might be optimized or data joined earlier
-export async function getProductNameById(id: string): Promise<string> {
-    const product = await getProductById(id);
-    return product ? product.nameAr : `منتج غير معروف (${id.substring(0,6)})`;
-}
-
-// --- Helper to get customer by ID ---
-export async function getCustomerById(id: string): Promise<Customer | undefined> {
-   await new Promise(resolve => setTimeout(resolve, 20));
-   const customer = sampleCustomers.find(c => c.id === id);
-   return customer ? { ...customer, balance: customer.balance ?? 0 } : undefined;
-}
-
-
-// --- User Management Data ---
+// --- Users Data ---
 let sampleUsers: User[] = [
   { id: 'user-001', name: 'Admin User', email: 'admin@example.com', role: 'admin' },
   { id: 'user-002', name: 'Seller User', email: 'seller@example.com', role: 'seller' },
@@ -652,160 +250,489 @@ let sampleUsers: User[] = [
    { id: 'user-004', name: 'Accountant User', email: 'accountant@example.com', role: 'accountant' },
 ];
 
+// --- Helper Functions ---
+
+const SIMULATE_DELAY = 50; // milliseconds
+
+// Ensures Date objects are correctly handled when retrieving data
+const parseDates = <T extends { date?: Date | string, expiryDate?: Date | string }>(items: T[]): T[] => {
+  return items.map(item => ({
+    ...item,
+    ...(item.date && { date: new Date(item.date) }),
+    ...(item.expiryDate && { expiryDate: new Date(item.expiryDate) }),
+  }));
+};
+
+// --- Product Data Operations ---
+export async function getProducts(): Promise<Product[]> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  return parseDates([...sampleProducts]).map(p => ({
+    ...p,
+    lastPurchaseCost: p.lastPurchaseCost ?? p.price * 0.7, // Estimate cost if missing
+  }));
+}
+
+export async function getProductById(id: string): Promise<Product | undefined> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY / 2));
+  const product = sampleProducts.find(p => p.id === id);
+  return product ? {
+    ...product,
+    lastPurchaseCost: product.lastPurchaseCost ?? product.price * 0.7, // Estimate cost
+    expiryDate: product.expiryDate ? new Date(product.expiryDate) : undefined
+  } : undefined;
+}
+
+export async function getProductByBarcode(barcode: string): Promise<Product | undefined> {
+    await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY / 2));
+    const product = sampleProducts.find(p => p.barcode === barcode);
+    return product ? {
+        ...product,
+        lastPurchaseCost: product.lastPurchaseCost ?? product.price * 0.7,
+        expiryDate: product.expiryDate ? new Date(product.expiryDate) : undefined
+    } : undefined;
+}
+
+export async function addProduct(productData: Omit<Product, 'id'>): Promise<Product> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  const newProduct: Product = {
+    id: `prod-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`,
+    ...productData,
+    quantity: Math.max(0, productData.quantity || 0), // Ensure non-negative
+    price: Math.max(0, productData.price || 0), // Ensure non-negative
+    lastPurchaseCost: productData.lastPurchaseCost !== undefined ? Math.max(0, productData.lastPurchaseCost) : undefined, // Ensure non-negative
+    minStockLevel: productData.minStockLevel !== undefined ? Math.max(0, productData.minStockLevel) : undefined,
+    discountRate: productData.discountRate !== undefined ? Math.max(0, Math.min(100, productData.discountRate)) : undefined,
+    expiryDate: productData.expiryDate ? new Date(productData.expiryDate) : undefined,
+    categoryIcon: productData.categoryIcon || Pill,
+  };
+  sampleProducts.push(newProduct);
+  console.log("Added Product:", newProduct);
+  return newProduct;
+}
+
+export async function updateProduct(id: string, updates: Partial<Omit<Product, 'id'>>): Promise<Product | null> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  const index = sampleProducts.findIndex(p => p.id === id);
+  if (index === -1) return null;
+
+  const currentProduct = sampleProducts[index];
+  const updatedProduct = { ...currentProduct, ...updates };
+
+  // --- Apply validation logic ---
+  if (updates.quantity !== undefined) {
+    updatedProduct.quantity = Math.max(0, updates.quantity);
+  }
+  if (updates.price !== undefined) {
+    updatedProduct.price = Math.max(0, updates.price);
+  }
+  if (updates.lastPurchaseCost !== undefined) {
+    updatedProduct.lastPurchaseCost = Math.max(0, updates.lastPurchaseCost);
+  }
+  if (updates.minStockLevel !== undefined) {
+    updatedProduct.minStockLevel = Math.max(0, updates.minStockLevel);
+  }
+  if (updates.discountRate !== undefined) {
+    updatedProduct.discountRate = Math.max(0, Math.min(100, updates.discountRate));
+  }
+  if (updates.subUnitsPerUnit !== undefined) {
+    updatedProduct.subUnitsPerUnit = updates.subUnitsPerUnit > 0 ? updates.subUnitsPerUnit : undefined;
+    if (!updatedProduct.subUnitsPerUnit) updatedProduct.subUnitType = undefined;
+  }
+  if (updates.expiryDate) {
+    updatedProduct.expiryDate = new Date(updates.expiryDate);
+  }
+
+  sampleProducts[index] = updatedProduct;
+  console.log("Updated Product:", updatedProduct);
+  return updatedProduct;
+}
+
+export async function deleteProduct(id: string): Promise<boolean> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  const initialLength = sampleProducts.length;
+  sampleProducts = sampleProducts.filter(p => p.id !== id);
+  const success = sampleProducts.length < initialLength;
+  console.log(`Deleted Product ${id}?`, success);
+  return success;
+}
+
+// --- Supplier Data Operations ---
+export async function getSuppliers(): Promise<Supplier[]> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  return [...sampleSuppliers];
+}
+
+export async function addSupplier(supplierData: Omit<Supplier, 'id'>): Promise<Supplier> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  const newSupplier: Supplier = {
+    id: `supp-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`,
+    ...supplierData,
+  };
+  sampleSuppliers.push(newSupplier);
+  console.log("Added Supplier:", newSupplier);
+  return newSupplier;
+}
+
+export async function updateSupplier(id: string, updates: Partial<Supplier>): Promise<Supplier | null> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  const index = sampleSuppliers.findIndex(s => s.id === id);
+  if (index === -1) return null;
+  // Prevent changing ID
+  const { id: _, ...safeUpdates } = updates;
+  sampleSuppliers[index] = { ...sampleSuppliers[index], ...safeUpdates };
+  console.log("Updated Supplier:", sampleSuppliers[index]);
+  return sampleSuppliers[index];
+}
+
+export async function deleteSupplier(id: string): Promise<boolean> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  const initialLength = sampleSuppliers.length;
+  sampleSuppliers = sampleSuppliers.filter(s => s.id !== id);
+  const success = sampleSuppliers.length < initialLength;
+  console.log(`Deleted Supplier ${id}?`, success);
+  return success;
+}
+
+// --- Customer Data Operations ---
+export async function getCustomers(): Promise<Customer[]> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  return [...sampleCustomers.map(c => ({ ...c, balance: c.balance ?? 0 }))];
+}
+
+export async function getCustomerById(id: string): Promise<Customer | undefined> {
+   await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY / 2));
+   const customer = sampleCustomers.find(c => c.id === id);
+   return customer ? { ...customer, balance: customer.balance ?? 0 } : undefined;
+}
+
+export async function addCustomer(customerData: Omit<Customer, 'id'>): Promise<Customer> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  const newCustomer: Customer = {
+    id: `cust-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`,
+    ...customerData,
+    balance: customerData.balance ?? 0,
+    insuranceDiscountRate: customerData.insuranceDiscountRate !== undefined ? Math.max(0, Math.min(100, customerData.insuranceDiscountRate)) : undefined,
+  };
+  sampleCustomers.push(newCustomer);
+  console.log("Added Customer:", newCustomer);
+  return newCustomer;
+}
+
+export async function updateCustomer(id: string, updates: Partial<Customer>): Promise<Customer | null> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  const index = sampleCustomers.findIndex(c => c.id === id);
+  if (index === -1) return null;
+  // Prevent changing ID
+  const { id: _, ...safeUpdates } = updates;
+  const updatedCustomer = { ...sampleCustomers[index], ...safeUpdates };
+  // Validate balance and insurance rate
+  if (updates.balance !== undefined && typeof updates.balance !== 'number') {
+    updatedCustomer.balance = sampleCustomers[index].balance ?? 0;
+  }
+  if (updates.insuranceDiscountRate !== undefined) {
+      updatedCustomer.insuranceDiscountRate = typeof updates.insuranceDiscountRate === 'number' && updates.insuranceDiscountRate >= 0 && updates.insuranceDiscountRate <= 100
+          ? updates.insuranceDiscountRate
+          : undefined;
+  }
+  sampleCustomers[index] = updatedCustomer;
+  console.log("Updated Customer:", updatedCustomer);
+  return updatedCustomer;
+}
+
+export async function deleteCustomer(id: string): Promise<boolean> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  const initialLength = sampleCustomers.length;
+  sampleCustomers = sampleCustomers.filter(c => c.id !== id);
+  const success = sampleCustomers.length < initialLength;
+  console.log(`Deleted Customer ${id}?`, success);
+  return success;
+}
+
+// --- Sale Transaction Operations ---
+export async function getSales(): Promise<SaleTransaction[]> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  return parseDates([...sampleSales]).sort((a, b) => b.date.getTime() - a.date.getTime());
+}
+
+// Function to add a sale and update product quantities, costAtSale, and customer balance/insurance
+export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<SaleTransaction> {
+    await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+
+    const customer = saleData.customerId ? await getCustomerById(saleData.customerId) : undefined;
+    const insuranceRate = customer?.insuranceDiscountRate ?? 0;
+
+    // Calculate original total, subtotal (after product discount), and prepare items with costAtSale
+    const calculateTotalsAndPrepareItems = async (items: SaleTransactionItem[]): Promise<{ originalTotal: number; subTotal: number; preparedItems: SaleTransactionItem[] }> => {
+        let originalTotal = 0;
+        let subTotal = 0;
+        const preparedItems: SaleTransactionItem[] = [];
+        for (const item of items) {
+            const product = await getProductById(item.productId);
+            // Determine cost at the time of sale
+            let costAtSale: number | undefined;
+            let originalPrice = item.price; // Default to sale price if product not found
+            if (product) {
+                costAtSale = item.soldUnitType === 'sub' && product.subUnitsPerUnit && product.lastPurchaseCost
+                    ? product.lastPurchaseCost / product.subUnitsPerUnit
+                    : product.lastPurchaseCost; // Cost per sold unit type
+
+                originalPrice = item.soldUnitType === 'sub' && product.subUnitsPerUnit
+                    ? product.price / product.subUnitsPerUnit
+                    : product.price;
+            }
+
+            originalTotal += originalPrice * item.quantity;
+            subTotal += item.price * item.quantity; // item.price is already discounted (product discount)
+            preparedItems.push({ ...item, costAtSale });
+        }
+        return { originalTotal, subTotal, preparedItems };
+    };
+
+    const { originalTotal, subTotal, preparedItems } = await calculateTotalsAndPrepareItems(saleData.items);
+
+    // Apply insurance discount to the subtotal
+    const finalTotalAmount = subTotal * (1 - (insuranceRate / 100));
+
+    const newSale: SaleTransaction = {
+        id: `sale-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`,
+        customerId: saleData.customerId,
+        items: preparedItems, // Use items with costAtSale
+        totalAmount: finalTotalAmount, // Final amount after all discounts
+        subTotalAmount: subTotal, // Amount after product discount
+        originalTotalAmount: originalTotal, // Total amount before any discounts
+        paymentMethod: saleData.paymentMethod,
+        amountPaid: saleData.amountPaid,
+        date: saleData.date ? new Date(saleData.date) : new Date(),
+        appliedInsuranceDiscountRate: insuranceRate,
+    };
+    sampleSales.push(newSale);
+    console.log("Added Sale:", newSale);
+
+    // --- Update Product Quantities ---
+    await Promise.all(newSale.items.map(async (item) => {
+        const product = await getProductById(item.productId);
+        if (product) {
+            let quantityToDeduct = item.quantity;
+            if (item.soldUnitType === 'sub' && product.subUnitsPerUnit && product.subUnitsPerUnit > 0) {
+                quantityToDeduct = item.quantity / product.subUnitsPerUnit;
+            }
+            const newQuantity = Math.max(0, product.quantity - quantityToDeduct); // Ensure quantity doesn't go below zero
+            await updateProduct(item.productId, { quantity: newQuantity });
+            console.log(`Updated product ${item.productId} quantity to ${newQuantity}`);
+        } else {
+            console.warn(`Product with ID ${item.productId} not found during sale stock update.`);
+        }
+    }));
+    console.log("Product quantities updated after sale.");
+
+    // --- Update Customer Balance ---
+    if (customer) {
+        const amountDue = newSale.totalAmount;
+        let balanceChange = 0;
+
+        if (newSale.paymentMethod === 'debt') {
+             // Debt increases the negative balance (customer owes more)
+            balanceChange = -(amountDue - newSale.amountPaid);
+        } else {
+            // Other payment methods (cash/card) might result in overpayment (credit)
+             balanceChange = newSale.amountPaid - amountDue; // Positive if overpaid
+        }
+
+        if (balanceChange !== 0) {
+             const newBalance = (customer.balance ?? 0) + balanceChange;
+             await updateCustomer(customer.id, { balance: newBalance });
+             console.log(`Updated customer ${customer.id} balance to ${newBalance}`);
+        }
+    }
+
+    return newSale;
+}
+
+// Placeholder for updating a sale (e.g., adding payment to a debt invoice)
+// export async function updateSale(id: string, updates: Partial<SaleTransaction>): Promise<SaleTransaction | null> {
+//   // Implement logic to find sale, update fields, recalculate balance if needed
+//   return null;
+// }
+
+// Placeholder for deleting a sale (consider implications on stock and balance)
+// export async function deleteSale(id: string): Promise<boolean> {
+//   // Implement logic to find sale, reverse stock/balance changes?, delete record
+//   return false;
+// }
+
+// --- Purchase Transaction Operations ---
+export async function getPurchases(): Promise<PurchaseTransaction[]> {
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  return parseDates([...samplePurchases]).sort((a, b) => b.date.getTime() - a.date.getTime());
+}
+
+export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' | 'totalAmount' | 'paymentStatus'>): Promise<PurchaseTransaction> {
+    await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+
+    const totalAmount = purchaseData.items.reduce((sum, item) => sum + (item.quantity || 0) * (item.cost || 0), 0);
+    let paymentStatus: PaymentStatus = 'unpaid';
+    if (purchaseData.amountPaid >= totalAmount && totalAmount > 0) { // Check totalAmount > 0
+        paymentStatus = 'paid';
+    } else if (purchaseData.amountPaid > 0) {
+        paymentStatus = 'partial';
+    }
+
+    const newPurchase: PurchaseTransaction = {
+        id: `pur-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`,
+        ...purchaseData,
+        date: purchaseData.date ? new Date(purchaseData.date) : new Date(),
+        totalAmount: totalAmount,
+        paymentStatus: paymentStatus,
+    };
+    samplePurchases.push(newPurchase);
+    console.log("Added Purchase:", newPurchase);
+
+    // --- Update Product Quantities and Costs ---
+    await Promise.all(newPurchase.items.map(async (item) => {
+        const product = await getProductById(item.productId);
+        if (product) {
+            const newQuantity = product.quantity + (item.quantity || 0);
+            const updates: Partial<Omit<Product, 'id'>> = {
+                quantity: newQuantity,
+                lastPurchaseCost: Math.max(0, item.cost || 0) // Update last cost, ensure non-negative
+            };
+            if (item.expiryDate) {
+                updates.expiryDate = new Date(item.expiryDate);
+            }
+            await updateProduct(item.productId, updates);
+            console.log(`Updated product ${item.productId}: quantity=${newQuantity}, cost=${updates.lastPurchaseCost} ${updates.expiryDate ? `, expiry=${updates.expiryDate.toLocaleDateString()}` : ''}`);
+        } else {
+            console.warn(`Product with ID ${item.productId} not found during purchase stock update.`);
+            // Optional: Consider adding the product if it doesn't exist
+            // await addProduct({ nameAr: `منتج جديد (${item.productId})`, nameEn: `New Product (${item.productId})`, price: item.cost * 1.2, quantity: item.quantity, lastPurchaseCost: item.cost, expiryDate: item.expiryDate, unitType: 'قطعة' });
+        }
+    }));
+    console.log("Product quantities updated after purchase.");
+
+    // TODO: Update supplier balance/account if tracking supplier debts
+    // const supplier = await getSupplierById(newPurchase.supplierId);
+    // if (supplier) { ... update supplier balance ... }
+
+    return newPurchase;
+}
+
+// Placeholder for updating a purchase
+// export async function updatePurchase(id: string, updates: Partial<PurchaseTransaction>): Promise<PurchaseTransaction | null> {
+//     // Implement update logic
+//     return null;
+// }
+
+// Placeholder for deleting a purchase
+// export async function deletePurchase(id: string): Promise<boolean> {
+//     // Implement delete logic, consider reversing stock changes
+//     return false;
+// }
+
+// --- User Operations ---
 export async function getUsers(): Promise<User[]> {
-  await new Promise(resolve => setTimeout(resolve, 50));
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
   return [...sampleUsers];
 }
 
-// Add functions for addUser, updateUser, deleteUser later as needed
 export async function addUser(userData: Omit<User, 'id'>): Promise<User> {
-  await new Promise(resolve => setTimeout(resolve, 50));
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
   const newUser: User = {
+    id: `user-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`,
     ...userData,
-    id: `user-${Date.now().toString()}-${Math.random().toString(16).substring(2, 8)}`,
+    // Add password hashing here in a real app
   };
   sampleUsers.push(newUser);
-   console.log("Added User:", newUser);
-   console.log("Current Users:", sampleUsers);
+  console.log("Added User:", newUser);
   return newUser;
 }
 
 export async function updateUser(id: string, updates: Partial<User>): Promise<User | null> {
-  await new Promise(resolve => setTimeout(resolve, 50));
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
   const index = sampleUsers.findIndex(u => u.id === id);
   if (index === -1) return null;
-  // Prevent changing ID
-  const { id: _, ...safeUpdates } = updates;
+  const { id: _, ...safeUpdates } = updates; // Prevent changing ID
+  // Add logic to handle password update if needed
   sampleUsers[index] = { ...sampleUsers[index], ...safeUpdates };
-    console.log("Updated User:", sampleUsers[index]);
-    console.log("Current Users:", sampleUsers);
+  console.log("Updated User:", sampleUsers[index]);
   return sampleUsers[index];
 }
 
 export async function deleteUser(id: string): Promise<boolean> {
-  await new Promise(resolve => setTimeout(resolve, 50));
+  await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
+  // Optional: Prevent deleting the last admin user
+  // if (sampleUsers[index].role === 'admin' && sampleUsers.filter(u => u.role === 'admin').length === 1) { return false; }
   const initialLength = sampleUsers.length;
   sampleUsers = sampleUsers.filter(u => u.id !== id);
-   const success = sampleUsers.length < initialLength;
+  const success = sampleUsers.length < initialLength;
   console.log(`Deleted User ${id}?`, success);
-  console.log("Current Users:", sampleUsers);
   return success;
 }
 
+// --- Helper Functions ---
+export async function getProductNameById(id: string): Promise<string> {
+    const product = await getProductById(id);
+    return product ? product.nameAr : `منتج غير معروف (${id.substring(0,6)})`;
+}
 
 // --- Expiry Date Logic ---
 export function calculateDaysUntilExpiry(expiryDate?: Date): number {
-    if (!expiryDate) return Infinity; // Or some large number if no expiry
-    const today = new Date();
-    // Set time to 00:00:00 for accurate day difference calculation
-    today.setHours(0, 0, 0, 0);
-    // Make a copy before modifying
-    const expiryDateNormalized = new Date(expiryDate);
-    expiryDateNormalized.setHours(0, 0, 0, 0);
-    return differenceInDays(expiryDateNormalized, today);
+    if (!expiryDate) return Infinity;
+    const today = startOfDay(new Date()); // Normalize today
+    const expiry = startOfDay(new Date(expiryDate)); // Normalize expiry
+    return differenceInDays(expiry, today);
 }
 
-
-// Get products nearing expiry (e.g., within the next 90 days)
-export async function getProductsNearingExpiry(daysThreshold: number = 60): Promise<ProductExpiryInfo[]> { // Changed threshold to 60
+// --- Reporting Functions ---
+export async function getProductsNearingExpiry(daysThreshold: number = 60): Promise<ProductExpiryInfo[]> {
     const products = await getProducts();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize today's date
-
     const nearingExpiry = products
-        .filter(p => p.expiryDate) // Only consider products with an expiry date
+        .filter(p => p.expiryDate)
         .map(p => ({
             ...p,
-            expiryDate: new Date(p.expiryDate!), // Ensure it's a Date object
+            expiryDate: new Date(p.expiryDate!),
             daysUntilExpiry: calculateDaysUntilExpiry(new Date(p.expiryDate!)),
         }))
-        .filter(p => p.daysUntilExpiry >= 0 && p.daysUntilExpiry <= daysThreshold) // Within threshold and not already expired
-        .sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry); // Sort by soonest expiry first
+        .filter(p => p.daysUntilExpiry >= 0 && p.daysUntilExpiry <= daysThreshold)
+        .sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry);
 
     return nearingExpiry.map(({ id, nameAr, expiryDate, quantity, daysUntilExpiry }) => ({
-        id,
-        nameAr,
-        expiryDate,
-        quantity,
-        daysUntilExpiry,
+        id, nameAr, expiryDate, quantity, daysUntilExpiry,
     }));
 }
 
-// Get products that have already expired
 export async function getExpiredProducts(): Promise<ProductExpiryInfo[]> {
     const products = await getProducts();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Normalize today's date
-
     const expired = products
-        .filter(p => p.expiryDate) // Only consider products with an expiry date
+        .filter(p => p.expiryDate)
         .map(p => ({
             ...p,
-            expiryDate: new Date(p.expiryDate!), // Ensure it's a Date object
+            expiryDate: new Date(p.expiryDate!),
             daysUntilExpiry: calculateDaysUntilExpiry(new Date(p.expiryDate!)),
         }))
-        .filter(p => p.daysUntilExpiry < 0) // Expired products
-        .sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry); // Sort by most expired first
+        .filter(p => p.daysUntilExpiry < 0)
+        .sort((a, b) => a.daysUntilExpiry - b.daysUntilExpiry); // Most expired first
 
      return expired.map(({ id, nameAr, expiryDate, quantity, daysUntilExpiry }) => ({
-        id,
-        nameAr,
-        expiryDate,
-        quantity,
-        daysUntilExpiry,
+        id, nameAr, expiryDate, quantity, daysUntilExpiry,
     }));
 }
 
-// --- Alternative Product Logic ---
 export async function findAlternativeProducts(productId: string): Promise<Product[]> {
-    await new Promise(resolve => setTimeout(resolve, 70)); // Simulate slightly longer delay
+    await new Promise(resolve => setTimeout(resolve, SIMULATE_DELAY));
     const originalProduct = await getProductById(productId);
     if (!originalProduct || !originalProduct.activeIngredient) {
-        return []; // Cannot find alternatives without active ingredient
+        return [];
     }
-
     const allProducts = await getProducts();
     const alternatives = allProducts.filter(p =>
-        p.id !== productId && // Not the same product
-        p.activeIngredient && // Must have an active ingredient defined
-        p.activeIngredient.toLowerCase() === originalProduct.activeIngredient!.toLowerCase() // Match active ingredient (case-insensitive)
-        // Add more sophisticated matching logic here if needed (e.g., concentration, form)
+        p.id !== productId &&
+        p.activeIngredient &&
+        p.activeIngredient.toLowerCase() === originalProduct.activeIngredient!.toLowerCase()
+        // Consider adding concentration/form matching for better alternatives
     );
-
     return alternatives;
 }
 
-
-
-// --- Reports (Placeholders - Implement complex logic later) ---
-
-// Example: Get total sales value for a period (e.g., today)
-export async function getTotalSalesForToday(): Promise<number> {
-    const sales = await getSales();
-    const today = new Date();
-    const total = sales
-        .filter(sale => isSameDay(new Date(sale.date), today))
-        .reduce((sum, sale) => sum + sale.totalAmount, 0);
-    return total;
-}
-
-// Example: Get total purchases value for a period (e.g., today)
-export async function getTotalPurchasesForToday(): Promise<number> {
-    const purchases = await getPurchases();
-    const today = new Date();
-    const total = purchases
-        .filter(purchase => isSameDay(new Date(purchase.date), today))
-        .reduce((sum, purchase) => sum + purchase.totalAmount, 0);
-    return total;
-}
-
-// Example: Get customers with debt (negative balance)
-export async function getCustomersWithDebt(): Promise<Customer[]> {
-    const customers = await getCustomers();
-    return customers.filter(customer => (customer.balance ?? 0) < 0);
-}
-
-// --- Inventory Report Data ---
 export async function getInventoryReportData(): Promise<InventoryReportItem[]> {
   const products = await getProducts();
   return products.map(product => ({
@@ -815,9 +742,20 @@ export async function getInventoryReportData(): Promise<InventoryReportItem[]> {
     barcode: product.barcode,
     quantity: product.quantity,
     price: product.price,
-    lastPurchaseCost: product.lastPurchaseCost, // Use the stored cost
+    lastPurchaseCost: product.lastPurchaseCost,
     unitType: product.unitType,
     expiryDate: product.expiryDate,
-    inventoryValue: product.quantity * (product.lastPurchaseCost || 0), // Calculate inventory value
+    inventoryValue: product.quantity * (product.lastPurchaseCost || 0),
   }));
 }
+
+// Placeholder for Treasury related functions
+// export async function getTreasuryBalance(): Promise<number> { return 0; }
+// export async function addTreasuryEntry(type: 'deposit' | 'withdrawal' | 'transfer', amount: number, description: string): Promise<void> {}
+// export async function getTreasuryLog(): Promise<any[]> { return []; }
+
+// Placeholder for Label Printing function
+// export function generateLabelData(productId: string, dosage: string, instructions: string): object { return {}; }
+
+// Placeholder for generating barcodes (use a library like jsbarcode in practice)
+// export function generateBarcode(productId: string): string { return `barcode-for-${productId}`; }
