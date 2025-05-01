@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link'; // Import Link
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { DollarSign, Users, Package, ShoppingCart, Truck, AlertTriangle } from 'lucide-react';
+import { DollarSign, Users, Package, ShoppingCart, Truck, AlertTriangle, Pill, Baby, SprayCan, Activity } from 'lucide-react'; // Added product category icons
 import { getProducts, getSuppliers, getCustomers, getSales, getPurchases } from '@/lib/data'; // Import data functions
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChartConfig, ChartContainer, ChartTooltipContent } from "@/components/ui/chart"
@@ -34,11 +34,20 @@ interface LowStockProduct {
 
 // Helper to get icon name from component
 function getIconName(IconComponent?: React.ComponentType<any>): string {
-    // Add display names to your icon components if they don't have them
-    // or use a more robust mapping based on the component itself.
     if (!IconComponent) return 'Unknown';
-    return (IconComponent as any).displayName || IconComponent.name || 'Unknown';
+    const component = IconComponent as any;
+    if (component.displayName) return component.displayName;
+    if (component.name) return component.name;
+
+    // Fallback check for specific Lucide icons
+    if (IconComponent === Pill) return 'Pill';
+    if (IconComponent === Baby) return 'Baby';
+    if (IconComponent === SprayCan) return 'SprayCan';
+    if (IconComponent === Activity) return 'Activity';
+
+    return 'Unknown';
 }
+
 
 // Mapping from icon name (or component name) to Arabic label
 const categoryLabels: { [key: string]: string } = {
@@ -145,13 +154,13 @@ export default function DashboardOverviewPage() {
   }, []);
 
 
-  const chartConfig = categorySalesData.reduce((acc, cur) => {
-         // Use the 'name' (internal key) for config, but the 'label' for display
-         acc[cur.name] = { label: cur.label, color: cur.fill };
-         return acc;
-     }, { // Initial value with type assertion
-         totalSales: { label: "إجمالي المبيعات (ر.س)" }
-     } as ChartConfig);
+   const chartConfig = {
+      ...categorySalesData.reduce((acc, cur) => {
+        acc[cur.name] = { label: cur.label, color: cur.fill };
+        return acc;
+      }, {} as Record<string, { label: string; color: string }>),
+       totalSales: { label: "إجمالي المبيعات (ر.س)" } // Ensure totalSales label exists
+    } as ChartConfig;
 
 
 
