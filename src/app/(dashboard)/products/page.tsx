@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -44,7 +45,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity, Barcode } from 'lucide-react'; // Added Barcode
 import type { Product } from '@/lib/types';
 import { getProducts, addProduct, updateProduct, deleteProduct } from '@/lib/data'; // Import CRUD functions
 
@@ -61,6 +62,7 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
     nameEn: initialData?.nameEn || '',
     price: initialData?.price || 0,
     quantity: initialData?.quantity || 0,
+    barcode: initialData?.barcode || '', // Add barcode
     categoryIconName: getIconName(initialData?.categoryIcon) || 'Pill', // Store icon name as string
   });
   const [isLoading, setIsLoading] = React.useState(false);
@@ -78,9 +80,11 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
     setIsLoading(true);
     try {
       const categoryIcon = getIconComponent(formData.categoryIconName); // Get component from name
+      // Prepare data, removing the temporary categoryIconName
+      const { categoryIconName, ...dataToSend } = formData;
       const productData: Omit<Product, 'id'> | Product = initialData
-        ? { ...initialData, ...formData, categoryIcon }
-        : { ...formData, categoryIcon };
+        ? { ...initialData, ...dataToSend, categoryIcon }
+        : { ...dataToSend, categoryIcon };
 
       await onSubmit(productData);
       onClose(); // Close dialog on success
@@ -130,13 +134,19 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
         <Label htmlFor="nameEn">الاسم (إنجليزي)</Label>
         <Input id="nameEn" name="nameEn" value={formData.nameEn} onChange={handleChange} required />
       </div>
-      <div>
-        <Label htmlFor="price">السعر (ر.س)</Label>
-        <Input id="price" name="price" type="number" step="0.01" value={formData.price} onChange={handleChange} required />
-      </div>
-      <div>
-        <Label htmlFor="quantity">الكمية</Label>
-        <Input id="quantity" name="quantity" type="number" value={formData.quantity} onChange={handleChange} required />
+       <div>
+         <Label htmlFor="barcode">الباركود</Label>
+         <Input id="barcode" name="barcode" value={formData.barcode} onChange={handleChange} />
+       </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+            <Label htmlFor="price">السعر (ر.س)</Label>
+            <Input id="price" name="price" type="number" step="0.01" value={formData.price} onChange={handleChange} required />
+        </div>
+        <div>
+            <Label htmlFor="quantity">الكمية</Label>
+            <Input id="quantity" name="quantity" type="number" value={formData.quantity} onChange={handleChange} required />
+        </div>
       </div>
        <div>
         <Label htmlFor="categoryIconName">أيقونة الفئة</Label>
@@ -207,6 +217,7 @@ export default function ProductsPage() {
   const handleUpdateProduct = async (productData: Product) => {
      if (!productData.id) return; // Should have id if editing
     try {
+       // Make sure to pass only the updateable fields if needed, or the whole object
       await updateProduct(productData.id, productData);
       toast({ title: "نجاح", description: "تم تحديث المنتج بنجاح." });
        setEditingProduct(null); // Clear editing state
@@ -236,30 +247,36 @@ export default function ProductsPage() {
   const columns: ColumnDef<Product>[] = [
      {
       accessorKey: "categoryIcon",
-      header: "الفئة",
+      header: "", // No header text needed for icon
       cell: ({ row }) => {
           const Icon = row.original.categoryIcon || Package;
           return <Icon className="w-5 h-5 text-muted-foreground mx-auto" />; // Center icon
       },
        enableSorting: false,
        enableHiding: false,
+       size: 40, // Smaller size for icon column
     },
     {
       accessorKey: "nameAr",
       header: "الاسم (عربي)",
+      size: 200,
     },
-    {
-      accessorKey: "nameEn",
-      header: "الاسم (إنجليزي)",
-    },
+     {
+        accessorKey: "barcode",
+        header: "الباركود",
+        cell: ({ row }) => row.original.barcode || '-', // Display barcode or dash
+        size: 150,
+     },
     {
       accessorKey: "price",
-      header: "السعر (ر.س)",
-       cell: ({ row }) => ` ${row.original.price.toFixed(2)}`,
+      header: "السعر",
+       cell: ({ row }) => `${row.original.price.toFixed(2)} ر.س`,
+       size: 80,
     },
     {
       accessorKey: "quantity",
       header: "الكمية",
+      size: 80,
     },
     {
       id: "actions",
@@ -295,6 +312,7 @@ export default function ProductsPage() {
              </AlertDialogContent>
         </div>
       ),
+      size: 100, // Fixed size for actions
     },
   ];
 
@@ -337,12 +355,20 @@ export default function ProductsPage() {
                 </DialogTrigger>
               </div>
 
-               <div className="flex items-center py-4">
+               <div className="flex items-center py-4 gap-4">
                  <Input
                     placeholder="ابحث بالاسم العربي..."
                     value={(table.getColumn("nameAr")?.getFilterValue() as string) ?? ""}
                     onChange={(event) =>
                         table.getColumn("nameAr")?.setFilterValue(event.target.value)
+                    }
+                    className="max-w-sm"
+                 />
+                  <Input
+                    placeholder="ابحث بالباركود..."
+                    value={(table.getColumn("barcode")?.getFilterValue() as string) ?? ""}
+                    onChange={(event) =>
+                        table.getColumn("barcode")?.setFilterValue(event.target.value)
                     }
                     className="max-w-sm"
                  />
@@ -355,6 +381,7 @@ export default function ProductsPage() {
                       <TableRow key={headerGroup.id}>
                         {headerGroup.headers.map((header) => (
                           <TableHead key={header.id}
+                             style={{ width: header.getSize() !== 150 ? `${header.getSize()}px` : undefined }} // Apply size for fixed columns
                              onClick={header.column.getToggleSortingHandler()}
                              className={header.column.getCanSort() ? 'cursor-pointer select-none' : ''}>
                             {header.isPlaceholder
@@ -386,7 +413,7 @@ export default function ProductsPage() {
                           data-state={row.getIsSelected() && "selected"}
                         >
                           {row.getVisibleCells().map((cell) => (
-                            <TableCell key={cell.id}>
+                            <TableCell key={cell.id} style={{ width: cell.column.getSize() !== 150 ? `${cell.column.getSize()}px` : undefined }}>
                               {flexRender(cell.column.columnDef.cell, cell.getContext())}
                             </TableCell>
                           ))}
@@ -427,7 +454,7 @@ export default function ProductsPage() {
             </div>
 
              {/* Dialog Content for Add/Edit */}
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-md"> {/* Wider dialog */}
                 <DialogHeader>
                  <DialogTitle>{editingProduct ? 'تعديل المنتج' : 'إضافة منتج جديد'}</DialogTitle>
                 </DialogHeader>

@@ -1,3 +1,4 @@
+
 export interface Product {
   id: string;
   nameAr: string;
@@ -5,6 +6,7 @@ export interface Product {
   price: number;
   quantity: number;
   categoryIcon?: React.ComponentType<{ className?: string }>; // Optional icon component
+  barcode?: string; // Optional barcode field
 }
 
 export interface CartItem extends Product {

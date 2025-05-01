@@ -99,7 +99,7 @@ export default function DashboardOverviewPage() {
          const productMap = new Map(products.map(p => [p.id, p]));
 
          sales.forEach(sale => {
-             sale.items.forEach(item => {
+             sale.items.forEach((item: any) => {
                  const product = productMap.get(item.productId);
                  if (product) {
                      const categoryKey = getIconName(product.categoryIcon);
@@ -217,34 +217,6 @@ export default function DashboardOverviewPage() {
             <CardTitle>المبيعات حسب الفئة (أعلى 5)</CardTitle>
             <CardDescription>توزيع إجمالي المبيعات على فئات المنتجات.</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 flex items-center justify-center pb-6"> {/* Center chart */}
-           {isLoading ? (
-                <Skeleton className="h-60 w-full" />
-           ) : categorySalesData.length > 0 ? (
-            <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-[250px]"> {/* Adjusted size */}
-               <PieChart>
-                   <ChartTooltip
-                       cursor={false}
-                       content={<ChartTooltipContent hideLabel indicator="dot" nameKey="totalSales" formatter={(value, name) => [`${Number(value).toFixed(2)} ر.س`, chartConfig[name as keyof typeof chartConfig]?.label || name]}/>}
-                    />
-                    <Pie
-                       data={categorySalesData}
-                       dataKey="totalSales"
-                       nameKey="name" // Internal name used here
-                       labelKey="label" // Use label for display in tooltip/label if needed directly
-                       innerRadius={60}
-                       strokeWidth={5}
-                   >
-                        {categorySalesData.map((entry) => (
-                           <Cell key={`cell-${entry.name}`} fill={entry.fill} className="focus:outline-none focus:ring-1 focus:ring-ring focus:ring-offset-1" />
-                        ))}
-                   </Pie>
-               </PieChart>
-            </ChartContainer>
-             ) : (
-                <div className="h-60 flex items-center justify-center text-muted-foreground">لا توجد بيانات مبيعات كافية.</div>
-             )}
-          </CardContent>
         </Card>
 
          {/* Low Stock Products */}
@@ -261,23 +233,22 @@ export default function DashboardOverviewPage() {
                    <Skeleton className="h-8 w-full" />
                </div>
            ) : lowStockProducts.length > 0 ? (
-                <div className="flex-1 overflow-y-auto max-h-[240px]"> {/* Scrollable content */}
-                    <ul className="space-y-2 text-sm pr-2">
-                       {lowStockProducts.map((product) => (
-                           <li key={product.id} className="flex justify-between items-center border-b pb-1.5">
-                               <Link href={`/products?search=${product.id}`} className="hover:underline hover:text-primary truncate pr-2"> {/* Link to products page */}
-                                   {product.nameAr}
-                               </Link>
-                               <span className={`font-semibold whitespace-nowrap ${product.quantity <= 5 ? 'text-destructive' : 'text-amber-600'}`}>
-                                   {product.quantity}
-                               </span>
-                           </li>
-                       ))}
+                <><div className="flex-1 overflow-y-auto max-h-[240px]"> {/* Scrollable content */}
+                   <ul className="space-y-2 text-sm pr-2">
+                     {lowStockProducts.map((product) => (
+                       <li key={product.id} className="flex justify-between items-center border-b pb-1.5">
+                         <Link href={`/products?search=${product.id}`} className="hover:underline hover:text-primary truncate pr-2"> {/* Link to products page */}
+                           {product.nameAr}
+                         </Link>
+                         <span className={`font-semibold whitespace-nowrap ${product.quantity <= 5 ? 'text-destructive' : 'text-amber-600'}`}>
+                           {product.quantity}
+                         </span>
+                       </li>
+                     ))}
                    </ul>
-                </div>
-                <Button variant="outline" size="sm" className="mt-4 self-start" asChild>
-                   <Link href="/products">عرض كل المنتجات</Link>
-                </Button>
+                 </div><Button variant="outline" size="sm" className="mt-4 self-start" asChild>
+                     <Link href="/products">عرض كل المنتجات</Link>
+                   </Button></>
            ) : (
                <p className="text-muted-foreground text-center py-10 flex-1 flex items-center justify-center">لا توجد منتجات بقرب النفاد.</p>
             )}

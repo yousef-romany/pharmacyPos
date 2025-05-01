@@ -1,4 +1,5 @@
-import type { Product, Supplier, Customer } from '@/lib/types';
+
+import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction } from '@/lib/types';
 import { Pill, Baby, SprayCan, Activity, Building, User } from 'lucide-react';
 
 // --- Products Data ---
@@ -10,6 +11,7 @@ let sampleProducts: Product[] = [
     price: 15.50,
     quantity: 150,
     categoryIcon: Pill,
+    barcode: '6281060000010' // Example barcode
   },
   {
     id: 'prod-002',
@@ -18,6 +20,7 @@ let sampleProducts: Product[] = [
     price: 22.00,
     quantity: 80,
     categoryIcon: Activity,
+    barcode: '6281060000027' // Example barcode
   },
   {
     id: 'prod-003',
@@ -26,6 +29,7 @@ let sampleProducts: Product[] = [
     price: 55.75,
     quantity: 45,
     categoryIcon: Baby,
+    barcode: '6281060000034' // Example barcode
   },
   {
     id: 'prod-004',
@@ -34,6 +38,7 @@ let sampleProducts: Product[] = [
     price: 30.00,
     quantity: 60,
     categoryIcon: SprayCan,
+    barcode: '6281060000041' // Example barcode
   },
   {
     id: 'prod-005',
@@ -42,6 +47,7 @@ let sampleProducts: Product[] = [
     price: 12.25,
     quantity: 200,
     categoryIcon: Pill,
+    barcode: '6281060000058' // Example barcode
   },
   {
     id: 'prod-006',
@@ -50,6 +56,7 @@ let sampleProducts: Product[] = [
     price: 40.00,
     quantity: 90,
     categoryIcon: Activity,
+    barcode: '6281060000065' // Example barcode
   },
     {
     id: 'prod-007',
@@ -58,6 +65,7 @@ let sampleProducts: Product[] = [
     price: 25.50,
     quantity: 70,
     categoryIcon: Baby,
+    barcode: '6281060000072' // Example barcode
   },
   {
     id: 'prod-008',
@@ -66,6 +74,7 @@ let sampleProducts: Product[] = [
     price: 18.00,
     quantity: 110,
     categoryIcon: SprayCan, // Using SprayCan as a placeholder, could be Bottle icon if available
+    barcode: '6281060000089' // Example barcode
   },
 ];
 
@@ -81,12 +90,20 @@ export async function getProductById(id: string): Promise<Product | undefined> {
   return sampleProducts.find(p => p.id === id);
 }
 
+// Simulate finding product by barcode (in real app, query DB/API)
+export async function getProductByBarcode(barcode: string): Promise<Product | undefined> {
+    await new Promise(resolve => setTimeout(resolve, 20));
+    return sampleProducts.find(p => p.barcode === barcode);
+}
+
+
 export async function addProduct(productData: Omit<Product, 'id'>): Promise<Product> {
   await new Promise(resolve => setTimeout(resolve, 50));
   const newProduct: Product = {
     ...productData,
     id: `prod-${Date.now().toString()}-${Math.random().toString(16).substring(2, 8)}`, // Generate unique ID
      categoryIcon: productData.categoryIcon || Pill, // Default icon
+     barcode: productData.barcode || '', // Add barcode
   };
   sampleProducts.push(newProduct);
   console.log("Added Product:", newProduct);
@@ -94,13 +111,21 @@ export async function addProduct(productData: Omit<Product, 'id'>): Promise<Prod
   return newProduct;
 }
 
-export async function updateProduct(id: string, updates: Partial<Product>): Promise<Product | null> {
+export async function updateProduct(id: string, updates: Partial<Omit<Product, 'id'>>): Promise<Product | null> {
   await new Promise(resolve => setTimeout(resolve, 50));
   const index = sampleProducts.findIndex(p => p.id === id);
   if (index === -1) return null;
-  sampleProducts[index] = { ...sampleProducts[index], ...updates };
+
+  // Ensure quantity doesn't go below zero if updated directly
+   const currentProduct = sampleProducts[index];
+   const updatedProduct = { ...currentProduct, ...updates };
+   if (updatedProduct.quantity < 0) {
+        updatedProduct.quantity = 0; // Prevent negative stock
+   }
+
+  sampleProducts[index] = updatedProduct;
    console.log("Updated Product:", sampleProducts[index]);
-   console.log("Current Products:", sampleProducts);
+   // console.log("Current Products:", sampleProducts); // Optional: Log full list
   return sampleProducts[index];
 }
 
@@ -239,17 +264,57 @@ export async function deleteCustomer(id: string): Promise<boolean> {
 }
 
 // --- Transactions (Invoices) Data ---
-// For now, let's just keep this structure simple. We won't implement full CRUD yet.
-// In a real app, these would interact with Products (stock levels) etc.
-let sampleSales: any[] = []; // Replace 'any' with SaleTransaction later
-let samplePurchases: any[] = []; // Replace 'any' with PurchaseTransaction later
+let sampleSales: SaleTransaction[] = [];
+let samplePurchases: PurchaseTransaction[] = [
+     // Add some initial purchase data for testing
+    { id: 'pur-001', supplierId: 'supp-001', items: [{ productId: 'prod-001', quantity: 100, cost: 10.50 }, { productId: 'prod-005', quantity: 150, cost: 8.00 }], totalAmount: 2250.00, date: new Date(2024, 6, 14) },
+    { id: 'pur-002', supplierId: 'supp-002', items: [{ productId: 'prod-003', quantity: 50, cost: 45.00 }], totalAmount: 2250.00, date: new Date(2024, 6, 13) },
+];
 
-export async function getSales(): Promise<any[]> {
+export async function getSales(): Promise<SaleTransaction[]> {
   await new Promise(resolve => setTimeout(resolve, 50));
-  return [...sampleSales];
+  return [...sampleSales].sort((a, b) => b.date.getTime() - a.date.getTime()); // Return sorted copy
 }
 
-export async function getPurchases(): Promise<any[]> {
+export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<SaleTransaction> {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const newSale: SaleTransaction = {
+        ...saleData,
+        id: `sale-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`, // Unique sale ID
+        date: saleData.date || new Date(), // Ensure date exists
+    };
+    sampleSales.push(newSale);
+    console.log("Added Sale:", newSale);
+    return newSale;
+}
+
+export async function getPurchases(): Promise<PurchaseTransaction[]> {
   await new Promise(resolve => setTimeout(resolve, 50));
-  return [...samplePurchases];
+  return [...samplePurchases].sort((a, b) => b.date.getTime() - a.date.getTime()); // Return sorted copy
+}
+
+export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id'>): Promise<PurchaseTransaction> {
+    await new Promise(resolve => setTimeout(resolve, 50));
+    const newPurchase: PurchaseTransaction = {
+        ...purchaseData,
+        id: `pur-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`, // Unique purchase ID
+        date: purchaseData.date || new Date(), // Ensure date exists
+    };
+    samplePurchases.push(newPurchase);
+    console.log("Added Purchase:", newPurchase);
+
+    // Update product quantities after purchase
+     await Promise.all(newPurchase.items.map(async (item) => {
+        const product = await getProductById(item.productId);
+        if (product) {
+            const newQuantity = product.quantity + item.quantity;
+            await updateProduct(item.productId, { quantity: newQuantity });
+        } else {
+            console.warn(`Product with ID ${item.productId} not found during purchase update.`);
+            // Optionally handle adding the product if it doesn't exist, though this might indicate an issue.
+        }
+     }));
+    console.log("Product quantities updated after purchase.");
+
+    return newPurchase;
 }
