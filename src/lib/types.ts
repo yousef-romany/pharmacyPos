@@ -41,7 +41,7 @@ export interface SaleTransactionItem {
     productId: string;
     quantity: number; // Quantity of the sold unit
     price: number; // Price per sold unit at the time of sale
-    soldUnitType: 'main' | 'sub' | string; // Record which unit was sold ('main', 'sub', or potentially the string like 'علبة'/'شريط')
+    soldUnitType: 'main' | 'sub'; // Record which unit was sold
 }
 
 export interface SaleTransaction {
@@ -67,3 +67,4 @@ export interface PurchaseTransaction {
   totalAmount: number;
   date: Date;
 }
+

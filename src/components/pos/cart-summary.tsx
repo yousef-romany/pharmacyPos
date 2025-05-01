@@ -19,8 +19,8 @@ import {
 } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { addSale, updateProduct, getProductNameById } from '@/lib/data'; // Import addSale, updateProduct, getProductNameById
-import type { SaleTransaction, SaleTransactionItem } from '@/lib/types'; // Import SaleTransaction type
+import { addSale, updateProduct, getProductNameById, getProductById } from '@/lib/data'; // Import addSale, updateProduct, getProductNameById, getProductById
+import type { SaleTransaction, SaleTransactionItem, Product } from '@/lib/types'; // Import SaleTransaction type
 
 export function CartSummary() {
   const { items, getTotalPrice, getItemCount, clearCart } = useCart();
@@ -28,10 +28,32 @@ export function CartSummary() {
   const [isClient, setIsClient] = React.useState(false);
   const [isCheckingOut, setIsCheckingOut] = React.useState(false); // Checkout loading state
   const [lastSale, setLastSale] = React.useState<SaleTransaction | null>(null); // State to hold last sale for printing
+  const [productDetailsMap, setProductDetailsMap] = React.useState<Map<string, Product>>(new Map());
 
   React.useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Pre-fetch product details for items in the cart to get unit names for printing
+  React.useEffect(() => {
+      const fetchProductDetails = async () => {
+          const newMap = new Map(productDetailsMap);
+          let mapUpdated = false;
+          for (const item of items) {
+              if (!newMap.has(item.id)) {
+                  const product = await getProductById(item.id);
+                  if (product) {
+                      newMap.set(item.id, product);
+                      mapUpdated = true;
+                  }
+              }
+          }
+          if (mapUpdated) {
+              setProductDetailsMap(newMap);
+          }
+      };
+      fetchProductDetails();
+  }, [items, productDetailsMap]);
 
 
   // Basic print function for the last sale invoice
@@ -44,13 +66,22 @@ export function CartSummary() {
         return;
     }
 
-    // Fetch product names for the invoice items
+    // Fetch product names and unit labels for the invoice items
      let itemRowsHtml = '';
      for (const item of saleToPrint.items) {
-        const productName = await getProductNameById(item.productId);
-        const unitLabel = item.soldUnitType === 'sub'
-                ? items.find(cartItem => cartItem.id === item.productId)?.subUnitType || 'وحدة فرعية'
-                : items.find(cartItem => cartItem.id === item.productId)?.unitType || 'وحدة رئيسية';
+         // Fetch product details on demand if not already in map
+         let product = productDetailsMap.get(item.productId);
+         if (!product) {
+             product = await getProductById(item.productId);
+             if (product) {
+                 setProductDetailsMap(prevMap => new Map(prevMap).set(item.productId, product!));
+             }
+         }
+
+         const productName = product ? product.nameAr : `منتج (${item.productId.substring(0,6)})`;
+         const unitLabel = item.soldUnitType === 'sub'
+                 ? product?.subUnitType || 'فرعية' // Fallback label
+                 : product?.unitType || 'رئيسية'; // Fallback label
 
          itemRowsHtml += `
              <tr>
@@ -292,4 +323,3 @@ export function CartSummary() {
     </Sheet>
   );
 }
-

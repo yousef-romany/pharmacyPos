@@ -1,4 +1,5 @@
 
+
 import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem } from '@/lib/types';
 import { Pill, Baby, SprayCan, Activity } from 'lucide-react';
 
@@ -396,3 +397,4 @@ export async function getProductNameById(id: string): Promise<string> {
     const product = await getProductById(id);
     return product ? product.nameAr : `منتج غير معروف (${id.substring(0,6)})`;
 }
+

@@ -5,11 +5,12 @@ import * as React from 'react';
 import Link from 'next/link'; // Import Link
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { DollarSign, Users, Package, ShoppingCart, Truck, AlertTriangle, Pill, Baby, SprayCan, Activity } from 'lucide-react'; // Added product category icons
-import { getProducts, getSuppliers, getCustomers, getSales, getPurchases } from '@/lib/data'; // Import data functions
+import { getProducts, getSuppliers, getCustomers, getSales, getPurchases, getProductById } from '@/lib/data'; // Import data functions
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
 import { Button } from '@/components/ui/button'; // Import Button for link
+import type { Product, SaleTransactionItem } from '@/lib/types'; // Import Product type
 
 // Define a simple type for dashboard stats
 type DashboardStat = {
@@ -96,29 +97,26 @@ export default function DashboardOverviewPage() {
 
          // --- Calculate Category Sales ---
          const salesByCategory: { [key: string]: { totalSales: number, label: string } } = {};
-         const productMap = new Map(products.map(p => [p.id, p]));
+         // Fetch all product details concurrently for efficiency
+          const productDetailsPromises = Array.from(new Set(sales.flatMap(s => s.items.map(i => i.productId))))
+              .map(id => getProductById(id));
+          const productDetailsResults = await Promise.all(productDetailsPromises);
+          const productMap = new Map<string, Product | undefined>(
+             productDetailsResults.map(p => [p?.id || 'unknown', p])
+         );
+
 
          sales.forEach(sale => {
-             sale.items.forEach((item: any) => {
+             sale.items.forEach((item: SaleTransactionItem) => {
                  const product = productMap.get(item.productId);
-                 if (product) {
-                     const categoryKey = getIconName(product.categoryIcon);
-                     const categoryLabel = categoryLabels[categoryKey] || categoryKey; // Get Arabic label
-                     const amount = item.price * item.quantity;
-                     if (!salesByCategory[categoryKey]) {
-                         salesByCategory[categoryKey] = { totalSales: 0, label: categoryLabel };
-                     }
-                     salesByCategory[categoryKey].totalSales += amount;
-                 } else {
-                      // Handle cases where product might not be found (e.g., deleted product in old sale)
-                      const categoryKey = 'Unknown';
-                      const categoryLabel = categoryLabels[categoryKey];
-                       const amount = item.price * item.quantity;
-                       if (!salesByCategory[categoryKey]) {
-                         salesByCategory[categoryKey] = { totalSales: 0, label: categoryLabel };
-                       }
-                      salesByCategory[categoryKey].totalSales += amount;
+                 const categoryKey = product ? getIconName(product.categoryIcon) : 'Unknown';
+                 const categoryLabel = categoryLabels[categoryKey] || categoryKey; // Get Arabic label
+                 const amount = item.price * item.quantity;
+
+                 if (!salesByCategory[categoryKey]) {
+                     salesByCategory[categoryKey] = { totalSales: 0, label: categoryLabel };
                  }
+                 salesByCategory[categoryKey].totalSales += amount;
              });
          });
 

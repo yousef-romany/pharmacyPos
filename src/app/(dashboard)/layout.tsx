@@ -99,8 +99,8 @@ export default function DashboardLayout({
                     size="default" // Ensure size is passed if needed
                   >
                     <Link href={item.href} > {/* Removed legacyBehavior */}
-                      <item.icon />
-                      <span>{item.label}</span>
+                        <item.icon />
+                        <span>{item.label}</span>
                       {item.badge && isClient && cartItemCount > 0 && (
                          <Badge
                           variant="destructive"
@@ -130,10 +130,8 @@ export default function DashboardLayout({
                   >
                      {/* Updated Button Element structure */}
                      <Link href={item.href}>
-                      <>
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </>
+                         <item.icon />
+                         <span>{item.label}</span>
                      </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -147,11 +145,8 @@ export default function DashboardLayout({
                      variant="destructive" // Use destructive variant
                      size="default"
                   >
-                     {/* Ensure content is wrapped */}
-                     <>
                        <LogOut />
                        <span>تسجيل الخروج</span>
-                     </>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
             </SidebarMenu>
@@ -162,3 +157,4 @@ export default function DashboardLayout({
     </SidebarProvider>
   );
 }
+

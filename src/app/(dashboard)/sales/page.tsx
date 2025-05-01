@@ -35,7 +35,7 @@ interface SaleDetailsDialogProps {
     onClose: () => void;
 }
 
-// Helper type for items with product names
+// Helper type for items with product names and unit labels
 interface SaleItemWithDetails extends SaleTransactionItem {
     productName: string;
     unitLabel: string;
