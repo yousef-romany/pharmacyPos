@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -44,9 +45,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit, Trash2, User } from 'lucide-react';
+import { PlusCircle, Edit, Trash2, User, Coins } from 'lucide-react'; // Added Coins icon
 import type { Customer } from '@/lib/types';
 import { getCustomers, addCustomer, updateCustomer, deleteCustomer } from '@/lib/data';
+import { cn } from '@/lib/utils'; // Import cn
 
 // --- Customer Form ---
 interface CustomerFormProps {
@@ -61,13 +63,17 @@ function CustomerForm({ initialData, onSubmit, onClose }: CustomerFormProps) {
     phone: initialData?.phone || '',
     email: initialData?.email || '',
     address: initialData?.address || '',
+    balance: initialData?.balance || 0, // Add balance field
   });
     const [isLoading, setIsLoading] = React.useState(false);
 
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({
+        ...prev,
+        [name]: name === 'balance' ? parseFloat(value) || 0 : value, // Parse balance as float
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -93,15 +99,29 @@ function CustomerForm({ initialData, onSubmit, onClose }: CustomerFormProps) {
       </div>
       <div>
         <Label htmlFor="phone">رقم الهاتف</Label>
-        <Input id="phone" name="phone" type="tel" value={formData.phone} onChange={handleChange} />
+        <Input id="phone" name="phone" type="tel" value={formData.phone || ''} onChange={handleChange} />
       </div>
       <div>
         <Label htmlFor="email">البريد الإلكتروني</Label>
-        <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} />
+        <Input id="email" name="email" type="email" value={formData.email || ''} onChange={handleChange} />
       </div>
       <div>
         <Label htmlFor="address">العنوان</Label>
-        <Input id="address" name="address" value={formData.address} onChange={handleChange} />
+        <Input id="address" name="address" value={formData.address || ''} onChange={handleChange} />
+      </div>
+       <div>
+        <Label htmlFor="balance">الرصيد (المديونية/الائتمان)</Label>
+        <Input
+            id="balance"
+            name="balance"
+            type="number"
+            step="0.01"
+            value={formData.balance}
+            onChange={handleChange}
+        />
+         <p className="text-xs text-muted-foreground mt-1">
+             أدخل قيمة سالبة للمديونية (عليه)، وقيمة موجبة للائتمان (له).
+         </p>
       </div>
       <DialogFooter>
          <DialogClose asChild>
@@ -187,18 +207,32 @@ export default function CustomersPage() {
      {
         accessorKey: "name",
         header: "اسم العميل",
+        size: 150,
      },
      {
         accessorKey: "phone",
         header: "الهاتف",
+        size: 120,
      },
     {
         accessorKey: "email",
         header: "البريد الإلكتروني",
+        size: 180,
     },
     {
         accessorKey: "address",
         header: "العنوان",
+        size: 200,
+    },
+    {
+        accessorKey: "balance",
+        header: "الرصيد (ر.س)",
+        cell: ({ row }) => {
+            const balance = row.original.balance ?? 0;
+            const colorClass = balance < 0 ? "text-red-600" : balance > 0 ? "text-green-600" : "text-muted-foreground";
+            return <span className={cn("font-semibold", colorClass)}>{balance.toFixed(2)}</span>;
+        },
+        size: 100,
     },
     {
       id: "actions",
@@ -234,6 +268,7 @@ export default function CustomersPage() {
              </AlertDialogContent>
         </div>
       ),
+       size: 80,
     },
   ];
 
@@ -294,18 +329,20 @@ export default function CustomersPage() {
                       <TableRow key={headerGroup.id}>
                         {headerGroup.headers.map((header) => (
                           <TableHead key={header.id}
+                             style={{ width: header.getSize() !== 150 ? `${header.getSize()}px` : undefined }}
                              onClick={header.column.getToggleSortingHandler()}
-                             className={header.column.getCanSort() ? 'cursor-pointer select-none' : ''}>
+                             className={cn(header.column.getCanSort() ? 'cursor-pointer select-none' : '', 'whitespace-nowrap')} // Add whitespace-nowrap
+                            >
                             {header.isPlaceholder
                               ? null
                               : flexRender(
                                   header.column.columnDef.header,
                                   header.getContext()
                                 )}
-                                {{
+                                {header.column.getCanSort() && {
                                 asc: ' 🔼',
                                 desc: ' 🔽',
-                                }[header.column.getIsSorted() as string] ?? null}
+                                }[header.column.getIsSorted() as string]}
                           </TableHead>
                         ))}
                       </TableRow>
@@ -325,7 +362,7 @@ export default function CustomersPage() {
                           data-state={row.getIsSelected() && "selected"}
                         >
                           {row.getVisibleCells().map((cell) => (
-                            <TableCell key={cell.id}>
+                            <TableCell key={cell.id} style={{ width: cell.column.getSize() !== 150 ? `${cell.column.getSize()}px` : undefined }}>
                               {flexRender(cell.column.columnDef.cell, cell.getContext())}
                             </TableCell>
                           ))}
@@ -366,7 +403,7 @@ export default function CustomersPage() {
             </div>
 
              {/* Dialog Content for Add/Edit */}
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-md"> {/* Adjust width if needed */}
                 <DialogHeader>
                  <DialogTitle>{editingCustomer ? 'تعديل العميل' : 'إضافة عميل جديد'}</DialogTitle>
                 </DialogHeader>

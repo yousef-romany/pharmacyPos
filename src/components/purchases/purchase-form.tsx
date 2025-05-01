@@ -11,9 +11,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DatePicker } from '@/components/ui/date-picker'; // Assuming you have a DatePicker component
-import { Trash2, Plus, Search, Loader2 } from 'lucide-react';
+import { Trash2, Plus, Search, Loader2, Calendar as CalendarIcon } from 'lucide-react'; // Added CalendarIcon
 import { useToast } from '@/hooks/use-toast';
-import type { PurchaseTransaction, PurchaseTransactionItem, Product, Supplier } from '@/lib/types';
+import type { PurchaseTransaction, PurchaseTransactionItem, Product, Supplier, PaymentStatus } from '@/lib/types';
 import { getProducts, getProductById } from '@/lib/data'; // Import product fetching functions
 import { Separator } from '@/components/ui/separator'; // Import Separator
 
@@ -23,11 +23,14 @@ const purchaseItemSchema = z.object({
   productName: z.string().optional(), // For display only
   quantity: z.number().min(0.01, "الكمية يجب أن تكون أكبر من 0"),
   cost: z.number().min(0, "التكلفة لا يمكن أن تكون سالبة"),
+  expiryDate: z.date().optional(), // Optional expiry date for the batch
 });
 
 const purchaseFormSchema = z.object({
   supplierId: z.string().min(1, "يجب اختيار مورد"),
   date: z.date({ required_error: "تاريخ الفاتورة مطلوب" }),
+  invoiceNumber: z.string().optional(), // Supplier's invoice number
+  amountPaid: z.number().min(0, "المبلغ المدفوع لا يمكن أن يكون سالباً").optional().default(0), // Amount paid to supplier
   items: z.array(purchaseItemSchema).min(1, "يجب إضافة منتج واحد على الأقل"),
 });
 
@@ -36,7 +39,7 @@ type PurchaseFormValues = z.infer<typeof purchaseFormSchema>;
 // --- Component Props ---
 interface PurchaseFormProps {
   suppliers: Supplier[];
-  onSubmit: (data: Omit<PurchaseTransaction, 'id'>) => Promise<void>;
+  onSubmit: (data: Omit<PurchaseTransaction, 'id' | 'totalAmount' | 'paymentStatus'>) => Promise<void>; // Adjusted onSubmit type
   onClose: () => void;
 }
 
@@ -52,6 +55,8 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
     defaultValues: {
       supplierId: '',
       date: new Date(),
+      invoiceNumber: '',
+      amountPaid: 0,
       items: [],
     },
   });
@@ -108,6 +113,7 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
       productName: product.nameAr, // Store name for display
       quantity: 1,
       cost: 0, // Default cost to 0, user should update
+      expiryDate: undefined, // Default expiry to undefined
     });
     setProductSearchTerm(''); // Clear search after adding
     setSearchResults([]);
@@ -117,11 +123,18 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
   const processSubmit = async (data: PurchaseFormValues) => {
     setIsLoading(true);
     try {
-      const purchaseData: Omit<PurchaseTransaction, 'id'> = {
+       // Omit totalAmount and paymentStatus, they will be calculated in the data layer
+      const purchaseData: Omit<PurchaseTransaction, 'id' | 'totalAmount' | 'paymentStatus'> = {
         supplierId: data.supplierId,
         date: data.date,
-        items: data.items.map(({ productId, quantity, cost }) => ({ productId, quantity, cost })),
-        totalAmount: data.items.reduce((sum, item) => sum + item.quantity * item.cost, 0),
+        invoiceNumber: data.invoiceNumber,
+        amountPaid: data.amountPaid ?? 0, // Ensure amountPaid is a number
+        items: data.items.map(({ productId, quantity, cost, expiryDate }) => ({
+            productId,
+            quantity,
+            cost,
+            expiryDate
+        })),
       };
       await onSubmit(purchaseData);
     } catch (error) {
@@ -142,7 +155,7 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
 
   return (
     <form onSubmit={form.handleSubmit(processSubmit)} className="space-y-6">
-      {/* Header Section: Supplier and Date */}
+      {/* Header Section: Supplier, Date, Invoice #, Amount Paid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Supplier Select */}
         <div>
@@ -184,6 +197,39 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
            />
           {form.formState.errors.date && <p className="text-xs text-destructive mt-1">{form.formState.errors.date.message}</p>}
         </div>
+
+         {/* Supplier Invoice Number */}
+         <div>
+           <Label htmlFor="invoiceNumber">رقم فاتورة المورد</Label>
+           <Input
+              id="invoiceNumber"
+              {...form.register('invoiceNumber')}
+              placeholder="اختياري"
+           />
+           {form.formState.errors.invoiceNumber && <p className="text-xs text-destructive mt-1">{form.formState.errors.invoiceNumber.message}</p>}
+         </div>
+
+         {/* Amount Paid */}
+         <div>
+           <Label htmlFor="amountPaid">المبلغ المدفوع</Label>
+           <Controller
+             name="amountPaid"
+             control={form.control}
+             render={({ field }) => (
+                <Input
+                   {...field}
+                   id="amountPaid"
+                   type="number"
+                   step="0.01"
+                   min="0"
+                   onChange={e => field.onChange(parseFloat(e.target.value) || 0)}
+                   value={field.value || ''}
+                   placeholder="0.00"
+                />
+             )}
+            />
+           {form.formState.errors.amountPaid && <p className="text-xs text-destructive mt-1">{form.formState.errors.amountPaid.message}</p>}
+         </div>
       </div>
 
       <Separator />
@@ -235,9 +281,10 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[40%]">المنتج</TableHead>
+                <TableHead className="w-[30%]">المنتج</TableHead>
                 <TableHead>الكمية</TableHead>
                 <TableHead>تكلفة الوحدة</TableHead>
+                <TableHead>تاريخ الصلاحية</TableHead> {/* Added Expiry Header */}
                 <TableHead>الإجمالي</TableHead>
                 <TableHead className="w-[50px]"> </TableHead>
               </TableRow>
@@ -256,7 +303,7 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
                           type="number"
                           step="any" // Allow fractional quantities if needed
                           min="0.01"
-                          className="h-8 w-24"
+                          className="h-8 w-20" // Adjusted width
                            onChange={e => inputField.onChange(parseFloat(e.target.value) || 0)}
                            value={inputField.value || ''}
                         />
@@ -274,13 +321,28 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
                           type="number"
                           step="0.01"
                           min="0"
-                          className="h-8 w-24"
+                          className="h-8 w-20" // Adjusted width
                            onChange={e => inputField.onChange(parseFloat(e.target.value) || 0)}
                            value={inputField.value || ''}
                         />
                       )}
                     />
                      {form.formState.errors.items?.[index]?.cost && <p className="text-xs text-destructive mt-1">{form.formState.errors.items?.[index]?.cost?.message}</p>}
+                  </TableCell>
+                  <TableCell> {/* Expiry Date Picker Cell */}
+                    <Controller
+                      name={`items.${index}.expiryDate`}
+                      control={form.control}
+                      render={({ field: dateField }) => (
+                          <DatePicker
+                             date={dateField.value}
+                             setDate={(date) => dateField.onChange(date)}
+                             buttonClassName="w-32 justify-start text-left font-normal h-8 text-xs px-2 py-1" // Small date picker button
+                             buttonContent={dateField.value ? undefined : <span className='flex items-center'><CalendarIcon className="mr-1 h-3 w-3"/> اختياري </span>} // Placeholder text
+                           />
+                       )}
+                    />
+                     {form.formState.errors.items?.[index]?.expiryDate && <p className="text-xs text-destructive mt-1">{form.formState.errors.items?.[index]?.expiryDate?.message}</p>}
                   </TableCell>
                   <TableCell>
                      {((form.watch(`items.${index}.quantity`) || 0) * (form.watch(`items.${index}.cost`) || 0)).toFixed(2)} ر.س
@@ -300,7 +362,7 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
               ))}
                {fields.length === 0 && (
                     <TableRow>
-                        <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
                             لم يتم إضافة أصناف بعد. ابحث عن منتج وأضفه.
                         </TableCell>
                     </TableRow>
@@ -308,7 +370,8 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
             </TableBody>
           </Table>
         </div>
-         {form.formState.errors.items && fields.length > 0 && <p className="text-xs text-destructive mt-1">{form.formState.errors.items.message}</p>}
+         {form.formState.errors.items && fields.length > 0 && typeof form.formState.errors.items === 'string' && <p className="text-xs text-destructive mt-1">{form.formState.errors.items}</p>}
+         {form.formState.errors.items?.root && <p className="text-xs text-destructive mt-1">{form.formState.errors.items.root.message}</p>}
       </div>
 
       {/* Footer Section: Total and Actions */}

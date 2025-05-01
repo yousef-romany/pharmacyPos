@@ -13,9 +13,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { Receipt, Printer, Eye } from 'lucide-react'; // Added icons
-import type { SaleTransaction, SaleTransactionItem } from '@/lib/types'; // Import the type
-import { getSales, getCustomers, getProductNameById, getProductById } from '@/lib/data'; // Import data fetching functions
+import { Receipt, Printer, Eye, CreditCard, Coins, Landmark } from 'lucide-react'; // Added icons for payment methods
+import type { SaleTransaction, SaleTransactionItem, Customer, PaymentMethod } from '@/lib/types'; // Import the type and Customer
+import { getSales, getCustomers, getProductById } from '@/lib/data'; // Import data fetching functions (getProductById needed for details)
 import {
   Dialog,
   DialogContent,
@@ -27,6 +27,10 @@ import {
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
+import { format } from 'date-fns';
+import { arSA } from 'date-fns/locale';
+import { Badge } from '@/components/ui/badge'; // Import Badge
+import { cn } from '@/lib/utils';
 
 // --- Sale Details Dialog ---
 interface SaleDetailsDialogProps {
@@ -39,16 +43,31 @@ interface SaleDetailsDialogProps {
 interface SaleItemWithDetails extends SaleTransactionItem {
     productName: string;
     unitLabel: string;
+    originalPrice: number; // Price before discount for this item's unit
 }
+
+// Helper function to get payment method details
+const getPaymentMethodInfo = (method: PaymentMethod) => {
+    switch (method) {
+        case 'cash': return { text: 'نقداً', icon: Coins, color: 'text-green-600' };
+        case 'card': return { text: 'بطاقة', icon: CreditCard, color: 'text-blue-600' };
+        case 'debt': return { text: 'آجل/مديونية', icon: Landmark, color: 'text-red-600' };
+        default: return { text: method, icon: Coins, color: 'text-muted-foreground' };
+    }
+};
+
 
 function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogProps) {
      const [detailedItems, setDetailedItems] = React.useState<SaleItemWithDetails[]>([]);
      const [isLoadingDetails, setIsLoadingDetails] = React.useState(false);
+      const [localOriginalTotal, setLocalOriginalTotal] = React.useState<number>(0);
+
 
     React.useEffect(() => {
         const fetchDetails = async () => {
             if (!sale) return;
             setIsLoadingDetails(true);
+            let calculatedOriginalTotal = 0;
             try {
                 const itemsWithDetails = await Promise.all(sale.items.map(async (item) => {
                      const product = await getProductById(item.productId); // Get full product info
@@ -56,13 +75,24 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
                      const unitLabel = item.soldUnitType === 'sub'
                         ? product?.subUnitType || 'فرعية'
                         : product?.unitType || 'رئيسية';
+
+                     // Calculate original price *before* discount for the sold unit
+                     const originalUnitPrice = product ? (item.soldUnitType === 'sub' && product.subUnitsPerUnit
+                        ? product.price / product.subUnitsPerUnit
+                        : product.price) : item.price / (1 - (product?.discountRate ?? 0) / 100); // Estimate if product missing
+
+                     calculatedOriginalTotal += originalUnitPrice * item.quantity;
+
                     return {
                         ...item,
                         productName: productName,
                         unitLabel: unitLabel,
+                        originalPrice: originalUnitPrice,
                     };
                 }));
                 setDetailedItems(itemsWithDetails);
+                 // Use the pre-calculated originalTotalAmount if available, otherwise use the dynamically calculated one
+                 setLocalOriginalTotal(sale.originalTotalAmount ?? calculatedOriginalTotal);
             } catch (error) {
                 console.error("Failed to fetch sale item details:", error);
                  // Handle error (e.g., show toast)
@@ -76,6 +106,10 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
 
     if (!sale) return null;
 
+    const paymentInfo = getPaymentMethodInfo(sale.paymentMethod);
+     const totalDiscount = localOriginalTotal - sale.totalAmount;
+
+
     // Basic print function (opens print dialog for the content)
     const handlePrint = () => {
         const printContent = document.getElementById('sale-details-content-printable');
@@ -88,12 +122,13 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
                      itemsHtmlForPrint = '<tr><td colspan="5">جاري تحميل تفاصيل الأصناف...</td></tr>';
                  } else {
                      detailedItems.forEach(item => {
+                        const hasDiscount = item.originalPrice !== item.price;
                          itemsHtmlForPrint += `
                              <tr>
                                  <td>${item.productName}</td>
                                  <td>${item.unitLabel}</td>
                                  <td>${item.quantity}</td>
-                                 <td>${item.price.toFixed(2)}</td>
+                                 <td>${item.price.toFixed(2)} ${hasDiscount ? `<span style="font-size:0.8em; color:gray; text-decoration: line-through;">(${item.originalPrice.toFixed(2)})</span>` : ''}</td>
                                  <td>${(item.quantity * item.price).toFixed(2)}</td>
                              </tr>
                          `;
@@ -110,10 +145,14 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
                          table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
                          th, td { border: 1px solid #ddd; padding: 6px; text-align: right; }
                          th { background-color: #f2f2f2; font-weight: bold; }
-                         .total { font-weight: bold; font-size: 1.1em; margin-top: 15px; text-align: left; }
+                          .totals { margin-top: 15px; text-align: left; font-size: 1.0em; line-height: 1.5; }
+                         .totals span { display: inline-block; min-width: 100px; }
+                         .totals strong { font-weight: bold; font-size: 1.1em; }
                          .header { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; text-align: center;}
                          .header h2 { margin: 0; font-size: 1.5em; }
+                          .info { margin-bottom: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px 15px; }
                          .info p { margin: 3px 0; }
+                         .payment-method { font-weight: bold; }
                           @media print {
                               body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                               button { display: none; }
@@ -125,10 +164,11 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
                          <h2>صيدليتي</h2>
                          <p>فاتورة بيع</p>
                      </div>
-                     <div class="info">
+                      <div class="info">
                          <p><strong>رقم الفاتورة:</strong> ${sale.id}</p>
-                         <p><strong>التاريخ:</strong> ${sale.date.toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short'})}</p>
+                         <p><strong>التاريخ:</strong> ${new Date(sale.date).toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short'})}</p>
                          <p><strong>العميل:</strong> ${customerName || 'عميل نقدي'}</p>
+                         <p><strong>طريقة الدفع:</strong> <span class="payment-method">${paymentInfo.text}</span></p>
                      </div>
                      <table>
                          <thead>
@@ -144,9 +184,12 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
                              ${itemsHtmlForPrint}
                          </tbody>
                      </table>
-                     <div class="total">
-                         <span>إجمالي الفاتورة: </span>
-                         <span>${sale.totalAmount.toFixed(2)} ر.س</span>
+                      <div class="totals">
+                         <div><span>الإجمالي الأصلي:</span> ${localOriginalTotal.toFixed(2)} ر.س</div>
+                         ${totalDiscount > 0 ? `<div><span>الخصم:</span> ${totalDiscount.toFixed(2)} ر.س</div>` : ''}
+                         <div><span>المبلغ المدفوع:</span> ${sale.amountPaid.toFixed(2)} ر.س</div>
+                          ${sale.paymentMethod === 'debt' ? `<div><span>المبلغ المتبقي (آجل):</span> ${(sale.totalAmount - sale.amountPaid).toFixed(2)} ر.س</div>` : ''}
+                         <div><strong>الإجمالي النهائي:</strong> <strong>${sale.totalAmount.toFixed(2)} ر.س</strong></div>
                      </div>
                       <button onclick="window.print()">طباعة</button>
                       <button onclick="window.close()">إغلاق</button>
@@ -167,9 +210,16 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
             </DialogHeader>
              {/* Content visible in the dialog */}
              <div className="py-4 space-y-4">
-                <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                     <p><strong className="ml-1">العميل:</strong> {customerName || 'عميل نقدي'}</p>
-                    <p><strong className="ml-1">تاريخ الفاتورة:</strong> {sale.date.toLocaleString('ar-SA', { dateStyle: 'short', timeStyle: 'short' })}</p>
+                    <p><strong className="ml-1">تاريخ الفاتورة:</strong> {format(new Date(sale.date), 'PPP p', { locale: arSA })}</p>
+                    <p><strong className="ml-1">طريقة الدفع:</strong>
+                         <Badge variant="outline" className={cn("mr-1 px-1.5 py-0.5 text-xs font-medium", paymentInfo.color)}>
+                             <paymentInfo.icon className="ml-1 h-3 w-3" />
+                             {paymentInfo.text}
+                         </Badge>
+                     </p>
+                     {/* Add any other relevant header info */}
                 </div>
                 <Separator />
                 <h4 className="font-medium">الأصناف:</h4>
@@ -191,23 +241,50 @@ function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDialogPro
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                             {detailedItems.map((item, index) => (
-                                <TableRow key={`${item.productId}-${index}`}>
-                                    <TableCell>{item.productName}</TableCell>
-                                    <TableCell>{item.unitLabel}</TableCell>
-                                    <TableCell>{item.quantity}</TableCell>
-                                    <TableCell>{item.price.toFixed(2)} ر.س</TableCell>
-                                    <TableCell>{(item.quantity * item.price).toFixed(2)} ر.س</TableCell>
-                                </TableRow>
-                            ))}
+                             {detailedItems.map((item, index) => {
+                                const hasDiscount = item.originalPrice !== item.price;
+                                return (
+                                    <TableRow key={`${item.productId}-${index}`}>
+                                        <TableCell>{item.productName}</TableCell>
+                                        <TableCell>{item.unitLabel}</TableCell>
+                                        <TableCell>{item.quantity}</TableCell>
+                                         <TableCell>
+                                             {item.price.toFixed(2)}
+                                             {hasDiscount && <span className="text-xs text-muted-foreground line-through mr-1">({item.originalPrice.toFixed(2)})</span>}
+                                         </TableCell>
+                                        <TableCell>{(item.quantity * item.price).toFixed(2)} ر.س</TableCell>
+                                    </TableRow>
+                                );
+                              })}
                         </TableBody>
                     </Table>
                 </div>
                 )}
                  <Separator />
-                 <div className="text-right text-lg font-bold mt-4">
-                    <span>إجمالي الفاتورة: </span>
-                    <span>{sale.totalAmount.toFixed(2)} ر.س</span>
+                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-right text-base mt-4">
+                      <span>الإجمالي الأصلي:</span>
+                      <span className="font-semibold">{localOriginalTotal.toFixed(2)} ر.س</span>
+
+                      {totalDiscount > 0 && (
+                          <>
+                             <span>الخصم:</span>
+                             <span className="font-semibold text-green-600">-{totalDiscount.toFixed(2)} ر.س</span>
+                          </>
+                      )}
+
+                     <span>المبلغ المدفوع:</span>
+                     <span className="font-semibold">{sale.amountPaid.toFixed(2)} ر.س</span>
+
+                      {sale.paymentMethod === 'debt' && (
+                           <>
+                             <span>المبلغ المتبقي (آجل):</span>
+                             <span className="font-semibold text-red-600">{(sale.totalAmount - sale.amountPaid).toFixed(2)} ر.س</span>
+                           </>
+                       )}
+
+
+                    <span className="text-lg font-bold col-start-1">الإجمالي النهائي:</span>
+                    <span className="text-lg font-bold">{sale.totalAmount.toFixed(2)} ر.س</span>
                 </div>
             </div>
 
@@ -302,6 +379,7 @@ export default function SalesPage() {
                   <TableHead>رقم الفاتورة</TableHead>
                   <TableHead>العميل</TableHead>
                   <TableHead>تاريخ الفاتورة</TableHead>
+                   <TableHead>طريقة الدفع</TableHead>
                   <TableHead>إجمالي المبلغ (ر.س)</TableHead>
                   <TableHead>عدد الأصناف</TableHead>
                    <TableHead className="text-right">إجراءات</TableHead>
@@ -310,30 +388,39 @@ export default function SalesPage() {
               <TableBody>
                 {isLoading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={7} className="h-24 text-center">
                       جاري تحميل الفواتير...
                     </TableCell>
                   </TableRow>
                 ) : filteredSales.length > 0 ? (
-                  filteredSales.map((sale) => (
-                    <TableRow key={sale.id}>
-                      <TableCell className="font-medium">{sale.id}</TableCell>
-                      <TableCell>{sale.customerId ? (customers.get(sale.customerId) || sale.customerId) : 'عميل نقدي'}</TableCell>
-                      <TableCell>{sale.date.toLocaleString('ar-SA', {dateStyle: 'short', timeStyle: 'short'})}</TableCell>
-                      <TableCell>{sale.totalAmount.toFixed(2)}</TableCell>
-                       <TableCell>{sale.items.length}</TableCell>
-                      <TableCell className="text-right">
-                         <DialogTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedSale(sale)}>
-                                <Eye className="h-4 w-4" />
-                            </Button>
-                         </DialogTrigger>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  filteredSales.map((sale) => {
+                     const paymentInfo = getPaymentMethodInfo(sale.paymentMethod);
+                      return (
+                        <TableRow key={sale.id}>
+                          <TableCell className="font-medium">{sale.id.substring(0, 8)}...</TableCell>
+                          <TableCell>{sale.customerId ? (customers.get(sale.customerId) || sale.customerId) : 'عميل نقدي'}</TableCell>
+                          <TableCell>{format(new Date(sale.date), 'dd/MM/yyyy p', { locale: arSA })}</TableCell>
+                           <TableCell>
+                               <Badge variant="outline" className={cn("px-1.5 py-0.5 text-xs", paymentInfo.color)}>
+                                  <paymentInfo.icon className="ml-1 h-3 w-3" />
+                                  {paymentInfo.text}
+                              </Badge>
+                           </TableCell>
+                          <TableCell>{sale.totalAmount.toFixed(2)}</TableCell>
+                           <TableCell>{sale.items.length}</TableCell>
+                          <TableCell className="text-right">
+                             <DialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedSale(sale)}>
+                                    <Eye className="h-4 w-4" />
+                                </Button>
+                             </DialogTrigger>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="h-24 text-center">
+                    <TableCell colSpan={7} className="h-24 text-center">
                       لا توجد فواتير بيع لعرضها.
                     </TableCell>
                   </TableRow>

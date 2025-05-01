@@ -3,11 +3,13 @@ export interface Product {
   id: string;
   nameAr: string;
   nameEn: string;
-  price: number; // Price of the main unit (e.g., box)
+  manufacturer?: string; // الشركة المصنعة
+  concentration?: string; // التركيز
+  price: number; // Price of the main unit (e.g., box) - سعر البيع
   quantity: number; // Quantity of the main unit in stock (can be fractional)
   categoryIcon?: React.ComponentType<{ className?: string }>; // Optional icon component
   barcode?: string; // Optional barcode field
-  unitType: string; // e.g., 'علبة', 'شريط', 'حبة'
+  unitType: string; // e.g., 'علبة', 'شريط', 'حبة' - النوع الأساسي
   subUnitType?: string; // Optional: e.g., 'شريط', 'حبة'
   subUnitsPerUnit?: number; // Optional: How many sub-units make up the main unit (e.g., 3 strips per box)
   discountRate?: number; // Optional: Discount percentage (0-100)
@@ -18,7 +20,7 @@ export interface Product {
 export interface CartItem extends Product {
   cartQuantity: number; // Quantity of the selected unit in the cart
   selectedUnitType: 'main' | 'sub'; // Which unit is currently selected in the cart
-  pricePerSelectedUnit: number; // The calculated price for the selected unit
+  pricePerSelectedUnit: number; // The calculated price for the selected unit *after* discount
 }
 
 export interface Supplier {
@@ -36,21 +38,27 @@ export interface Customer {
   phone?: string;
   email?: string;
   address?: string;
+  balance?: number; // Customer balance (positive for credit, negative for debt/مديونية) - Default 0
 }
 
 // Basic types for transactions, can be expanded later
 export interface SaleTransactionItem {
     productId: string;
     quantity: number; // Quantity of the sold unit
-    price: number; // Price per sold unit at the time of sale
+    price: number; // Price per sold unit at the time of sale (after discount)
     soldUnitType: 'main' | 'sub'; // Record which unit was sold
 }
 
+export type PaymentMethod = 'cash' | 'card' | 'debt';
+
 export interface SaleTransaction {
   id: string;
-  customerId?: string; // Link to customer
+  customerId?: string; // Link to customer (optional, for cash sales)
   items: SaleTransactionItem[];
-  totalAmount: number;
+  totalAmount: number; // Total amount *after* discount
+  originalTotalAmount?: number; // Total amount *before* discount (optional for reporting)
+  paymentMethod: PaymentMethod; // cash, card, debt
+  amountPaid: number; // Amount paid by customer
   date: Date;
 }
 
@@ -58,20 +66,26 @@ export interface SaleTransaction {
 export interface PurchaseTransactionItem {
     productId: string;
     quantity: number; // Quantity of the main unit purchased
-    cost: number; // Cost per main unit
+    cost: number; // Cost per main unit (سعر الشراء)
+    expiryDate?: Date; // Optional: Record expiry for this batch
 }
+
+export type PaymentStatus = 'paid' | 'unpaid' | 'partial';
 
 // Type for a purchase transaction (invoice)
 export interface PurchaseTransaction {
   id: string;
   supplierId: string; // Link to supplier
   items: PurchaseTransactionItem[];
-  totalAmount: number;
+  totalAmount: number; // Total calculated from items cost
+  paymentStatus: PaymentStatus; // paid, unpaid, partial
+  amountPaid: number; // Amount paid to supplier
   date: Date;
+  invoiceNumber?: string; // Optional: Supplier's invoice number
 }
 
 // --- User Management Types ---
-export type UserRole = 'admin' | 'seller' | 'manager' | 'accountant'; // Example roles
+export type UserRole = 'admin' | 'manager' | 'seller' | 'accountant'; // Example roles
 
 export interface User {
   id: string;

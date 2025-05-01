@@ -45,7 +45,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity, Barcode, Boxes, Percent, Calendar, AlertCircle, BadgePercent } from 'lucide-react'; // Added relevant icons
+import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity, Barcode, Boxes, Percent, Calendar, AlertCircle, BadgePercent, Building, Beaker } from 'lucide-react'; // Added Building, Beaker
 import type { Product } from '@/lib/types';
 import { getProducts, addProduct, updateProduct, deleteProduct, calculateDaysUntilExpiry } from '@/lib/data'; // Import CRUD functions and expiry helper
 import { DatePicker } from '@/components/ui/date-picker'; // Import DatePicker
@@ -64,6 +64,8 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
   const [formData, setFormData] = React.useState<Omit<Product, 'id' | 'categoryIcon'> & { categoryIconName?: string }>({
     nameAr: initialData?.nameAr || '',
     nameEn: initialData?.nameEn || '',
+    manufacturer: initialData?.manufacturer || '', // Added
+    concentration: initialData?.concentration || '', // Added
     price: initialData?.price || 0,
     quantity: initialData?.quantity || 0,
     barcode: initialData?.barcode || '',
@@ -168,7 +170,7 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
        {/* Main Product Details */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
              <Label htmlFor="nameAr">الاسم (عربي) <span className="text-destructive">*</span></Label>
              <Input id="nameAr" name="nameAr" value={formData.nameAr} onChange={handleChange} required />
@@ -176,6 +178,14 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
           <div>
              <Label htmlFor="nameEn">الاسم (إنجليزي) <span className="text-destructive">*</span></Label>
              <Input id="nameEn" name="nameEn" value={formData.nameEn} onChange={handleChange} required />
+          </div>
+          <div>
+             <Label htmlFor="manufacturer">الشركة المصنعة</Label>
+             <Input id="manufacturer" name="manufacturer" value={formData.manufacturer || ''} onChange={handleChange} />
+          </div>
+          <div>
+             <Label htmlFor="concentration">التركيز</Label>
+             <Input id="concentration" name="concentration" value={formData.concentration || ''} onChange={handleChange} />
           </div>
           <div>
             <Label htmlFor="barcode">الباركود</Label>
@@ -196,6 +206,12 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
                 ))}
              </select>
           </div>
+      </div>
+
+      <Separator className="my-4"/>
+
+       {/* Pricing, Quantity, Units Section */}
+       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
                 <Label htmlFor="unitType">الوحدة الرئيسية <span className="text-destructive">*</span></Label>
                 <Input id="unitType" name="unitType" placeholder="مثل: علبة, زجاجة..." value={formData.unitType} onChange={handleChange} required />
@@ -212,43 +228,35 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
                 <Label htmlFor="minStockLevel">حد أدنى للمخزون (تنبيه)</Label>
                 <Input id="minStockLevel" name="minStockLevel" type="number" min="0" step="1" placeholder="مثال: 10" value={formData.minStockLevel || ''} onChange={handleChange} />
             </div>
+              {/* Sub-unit section */}
+             <div>
+                <Label htmlFor="subUnitType">الوحدة الفرعية</Label>
+                <Input id="subUnitType" name="subUnitType" placeholder="مثل: شريط, حبة..." value={formData.subUnitType || ''} onChange={handleChange} />
+             </div>
+             <div>
+                <Label htmlFor="subUnitsPerUnit">عدد الوحدات الفرعية / الرئيسية</Label>
+                <Input id="subUnitsPerUnit" name="subUnitsPerUnit" type="number" min="1" step="1" placeholder="مثل: 2" value={formData.subUnitsPerUnit || ''} onChange={handleChange} />
+             </div>
+       </div>
+       <p className="text-xs text-muted-foreground col-span-full md:col-span-2 lg:col-span-3">
+         إذا كان المنتج يباع بوحدة أصغر (مثل شريط داخل علبة)، أدخل اسم الوحدة الفرعية وعددها داخل الوحدة الرئيسية.
+       </p>
 
-      </div>
-
-       {/* Sub-unit section */}
-        <div className="border-t pt-4 mt-4 space-y-4">
-             <h4 className="text-md font-medium text-muted-foreground">الوحدة الفرعية (اختياري)</h4>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <div>
-                    <Label htmlFor="subUnitType">الوحدة الفرعية</Label>
-                    <Input id="subUnitType" name="subUnitType" placeholder="مثل: شريط, حبة..." value={formData.subUnitType || ''} onChange={handleChange} />
-                 </div>
-                 <div>
-                    <Label htmlFor="subUnitsPerUnit">عدد الوحدات الفرعية / الرئيسية</Label>
-                    <Input id="subUnitsPerUnit" name="subUnitsPerUnit" type="number" min="1" step="1" placeholder="مثل: 2" value={formData.subUnitsPerUnit || ''} onChange={handleChange} />
-                 </div>
-            </div>
-             <p className="text-xs text-muted-foreground">
-                إذا كان المنتج يباع بوحدة أصغر (مثل شريط داخل علبة)، أدخل اسم الوحدة الفرعية وعددها داخل الوحدة الرئيسية.
-             </p>
-        </div>
+       <Separator className="my-4"/>
 
         {/* Expiry and Discount Section */}
-        <div className="border-t pt-4 mt-4 space-y-4">
-            <h4 className="text-md font-medium text-muted-foreground">الصلاحية والخصم</h4>
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                 <div>
-                    <Label htmlFor="expiryDate">تاريخ انتهاء الصلاحية</Label>
-                     <DatePicker
-                        date={formData.expiryDate}
-                        setDate={handleDateChange}
-                        buttonClassName="w-full justify-start text-left font-normal mt-1" // Style date picker button
-                    />
-                 </div>
-                 <div>
-                    <Label htmlFor="discountRate">نسبة الخصم (%)</Label>
-                     <Input id="discountRate" name="discountRate" type="number" min="0" max="100" step="0.01" placeholder="مثال: 5" value={formData.discountRate || ''} onChange={handleChange} />
-                 </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+               <Label htmlFor="expiryDate">تاريخ انتهاء الصلاحية</Label>
+                <DatePicker
+                   date={formData.expiryDate}
+                   setDate={handleDateChange}
+                   buttonClassName="w-full justify-start text-left font-normal mt-1" // Style date picker button
+               />
+            </div>
+            <div>
+               <Label htmlFor="discountRate">نسبة الخصم (%)</Label>
+                <Input id="discountRate" name="discountRate" type="number" min="0" max="100" step="0.01" placeholder="مثال: 5" value={formData.discountRate || ''} onChange={handleChange} />
             </div>
         </div>
 
@@ -352,10 +360,17 @@ export default function ProductsPage() {
            <div className="flex flex-col">
                <span className="font-medium">{row.original.nameAr}</span>
                <span className="text-xs text-muted-foreground">{row.original.nameEn}</span>
+               {row.original.concentration && <span className="text-xs text-muted-foreground/80">{row.original.concentration}</span>} {/* Show concentration */}
            </div>
        ),
-      size: 200,
+      size: 220, // Increased size for more info
     },
+     {
+        accessorKey: "manufacturer", // Added Manufacturer column
+        header: "الشركة",
+        cell: ({ row }) => row.original.manufacturer || '-',
+        size: 120,
+     },
      {
         accessorKey: "barcode",
         header: "الباركود",
@@ -397,7 +412,7 @@ export default function ProductsPage() {
             return (
                 <div className="flex items-center gap-1">
                     <span className={cn(isLowStock && "text-amber-600 font-bold")}>
-                        {Number.isInteger(qty) ? qty : qty.toFixed(2)}
+                        {Number.isInteger(qty) ? qty : qty.toFixed(2)} {/* Handle potential fractional quantity */}
                     </span>
                     {isLowStock && <AlertCircle className="w-4 h-4 text-amber-600" title={`الكمية أقل من الحد الأدنى (${minStock})`} />}
                  </div>
@@ -505,14 +520,22 @@ export default function ProductsPage() {
                 </DialogTrigger>
               </div>
 
-               <div className="flex items-center py-4 gap-4">
+               <div className="flex items-center py-4 gap-4 flex-wrap"> {/* Allow wrapping */}
                  <Input
                     placeholder="ابحث بالاسم..."
                     value={(table.getColumn("nameAr")?.getFilterValue() as string) ?? ""}
                     onChange={(event) =>
                         table.getColumn("nameAr")?.setFilterValue(event.target.value)
                     }
-                    className="max-w-sm"
+                    className="max-w-xs"
+                 />
+                  <Input
+                    placeholder="ابحث بالشركة..."
+                    value={(table.getColumn("manufacturer")?.getFilterValue() as string) ?? ""}
+                    onChange={(event) =>
+                        table.getColumn("manufacturer")?.setFilterValue(event.target.value)
+                    }
+                    className="max-w-xs"
                  />
                   <Input
                     placeholder="ابحث بالباركود..."
@@ -554,6 +577,10 @@ export default function ProductsPage() {
                         <TableRow
                           key={row.id}
                           data-state={row.getIsSelected() && "selected"}
+                           className={cn( // Apply row background based on expiry
+                              row.original.expiryDate && calculateDaysUntilExpiry(new Date(row.original.expiryDate)) < 0 ? "bg-red-100/30" :
+                              row.original.expiryDate && calculateDaysUntilExpiry(new Date(row.original.expiryDate)) <= 60 ? "bg-orange-100/30" : ""
+                           )}
                         >
                           {row.getVisibleCells().map((cell) => (
                             <TableCell key={cell.id} style={{ width: cell.column.getSize() !== 150 ? `${cell.column.getSize()}px` : undefined }}>
@@ -596,7 +623,7 @@ export default function ProductsPage() {
                  </div>
             </div>
 
-            <DialogContent className="sm:max-w-2xl"> {/* Wider dialog */}
+            <DialogContent className="sm:max-w-4xl"> {/* Wider dialog */}
                 <DialogHeader>
                  <DialogTitle>{editingProduct ? 'تعديل المنتج' : 'إضافة منتج جديد'}</DialogTitle>
                 </DialogHeader>
@@ -610,4 +637,3 @@ export default function ProductsPage() {
      </AlertDialog>
   );
 }
-

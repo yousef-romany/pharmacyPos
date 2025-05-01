@@ -13,9 +13,9 @@
  import { Button } from '@/components/ui/button';
  import { Input } from '@/components/ui/input';
  import { useToast } from '@/hooks/use-toast';
- import { Truck, Eye, Printer, PlusCircle } from 'lucide-react'; // Added icons
- import type { PurchaseTransaction, PurchaseTransactionItem, Supplier } from '@/lib/types'; // Import types
- import { getPurchases, getSuppliers, getProductNameById, addPurchase } from '@/lib/data'; // Import data fetching functions
+ import { Truck, Eye, Printer, PlusCircle, CheckCircle, XCircle, AlertCircle as AlertCircleIcon } from 'lucide-react'; // Added icons for payment status
+ import type { PurchaseTransaction, PurchaseTransactionItem, Supplier, PaymentStatus } from '@/lib/types'; // Import types
+ import { getPurchases, getSuppliers, getProductNameById, addPurchase, getProductById } from '@/lib/data'; // Import data fetching functions
  import {
    Dialog,
    DialogContent,
@@ -28,7 +28,10 @@
  import { Separator } from '@/components/ui/separator';
  import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
  import { PurchaseForm } from '@/components/purchases/purchase-form'; // Import the new form component
-
+ import { format } from 'date-fns';
+ import { arSA } from 'date-fns/locale';
+ import { Badge } from '@/components/ui/badge'; // Import Badge
+ import { cn } from '@/lib/utils';
 
  // --- Purchase Details Dialog ---
  interface PurchaseDetailsDialogProps {
@@ -37,7 +40,7 @@
      onClose: () => void;
  }
 
- // Helper type for items with product names
+ // Helper type for items with product names and expiry
  interface PurchaseItemWithDetails extends PurchaseTransactionItem {
      productName: string;
  }
@@ -54,7 +57,7 @@
             try {
                 const itemsWithDetails = await Promise.all(purchase.items.map(async (item) => {
                     const productName = await getProductNameById(item.productId);
-                    return { ...item, productName };
+                    return { ...item, productName }; // Expiry date already in item if set during purchase
                 }));
                 setDetailedItems(itemsWithDetails);
             } catch (error) {
@@ -70,6 +73,18 @@
 
      if (!purchase) return null;
 
+      // Map Payment Status to Badge Variant and Text
+     const getPaymentStatusInfo = (status: PaymentStatus) => {
+         switch (status) {
+             case 'paid': return { variant: 'default', text: 'مدفوع', icon: CheckCircle, color: 'text-green-600' };
+             case 'partial': return { variant: 'secondary', text: 'مدفوع جزئياً', icon: AlertCircleIcon, color: 'text-orange-600' };
+             case 'unpaid': return { variant: 'destructive', text: 'غير مدفوع', icon: XCircle, color: 'text-red-600' };
+             default: return { variant: 'outline', text: status, icon: AlertCircleIcon, color: 'text-muted-foreground' };
+         }
+     };
+     const paymentInfo = getPaymentStatusInfo(purchase.paymentStatus);
+
+
      // Basic print function (opens print dialog for the content)
      const handlePrint = () => {
          const printContent = document.getElementById('purchase-details-content-printable');
@@ -79,14 +94,16 @@
                   // Fetch item details again specifically for printing
                   let itemsHtmlForPrint = '';
                   if (isLoadingDetails) {
-                      itemsHtmlForPrint = '<tr><td colspan="4">جاري تحميل تفاصيل الأصناف...</td></tr>';
+                      itemsHtmlForPrint = '<tr><td colspan="5">جاري تحميل تفاصيل الأصناف...</td></tr>';
                   } else {
                       detailedItems.forEach(item => {
+                           const expiryText = item.expiryDate ? format(new Date(item.expiryDate), 'dd/MM/yyyy', {locale: arSA}) : '-';
                           itemsHtmlForPrint += `
                               <tr>
                                   <td>${item.productName}</td>
                                   <td>${item.quantity}</td>
                                   <td>${item.cost.toFixed(2)}</td>
+                                  <td>${expiryText}</td>
                                   <td>${(item.quantity * item.cost).toFixed(2)}</td>
                               </tr>
                           `;
@@ -96,17 +113,21 @@
                  printWindow.document.write(`
                   <html>
                   <head>
-                     <title>فاتورة شراء - ${purchase.id}</title>
+                     <title>فاتورة شراء - ${purchase.invoiceNumber || purchase.id}</title>
                       <style>
                          @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
                          body { font-family: 'Cairo', sans-serif; direction: rtl; padding: 20px; font-size: 12px; }
                          table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
                          th, td { border: 1px solid #ddd; padding: 6px; text-align: right; }
                          th { background-color: #f2f2f2; font-weight: bold; }
-                         .total { font-weight: bold; font-size: 1.1em; margin-top: 15px; text-align: left; }
+                         .totals { margin-top: 15px; text-align: left; font-size: 1.0em; line-height: 1.5; }
+                         .totals span { display: inline-block; min-width: 100px; }
+                         .totals strong { font-weight: bold; font-size: 1.1em; }
                          .header { margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px; text-align: center;}
-                         .header h2 { margin: 0; font-size: 1.5em;}
+                         .header h2 { margin: 0; font-size: 1.5em; }
+                         .info { margin-bottom: 15px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px 15px; }
                          .info p { margin: 3px 0; }
+                          .payment-status { font-weight: bold; }
                            @media print {
                                body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                                button { display: none; }
@@ -116,11 +137,12 @@
                   <body>
                       <div class="header">
                          <h2>فاتورة شراء</h2>
-                         <p>رقم الفاتورة: ${purchase.id}</p>
-                         <p>التاريخ: ${purchase.date.toLocaleDateString('ar-SA')}</p>
                       </div>
                       <div class="info">
+                         <p><strong>رقم الفاتورة (النظام):</strong> ${purchase.id}</p>
+                         <p><strong>رقم فاتورة المورد:</strong> ${purchase.invoiceNumber || '-'}</p>
                          <p><strong>المورد:</strong> ${supplierName || purchase.supplierId}</p>
+                         <p><strong>التاريخ:</strong> ${new Date(purchase.date).toLocaleDateString('ar-SA')}</p>
                       </div>
                       <table>
                          <thead>
@@ -128,6 +150,7 @@
                                  <th>المنتج</th>
                                  <th>الكمية</th>
                                  <th>التكلفة (ر.س)</th>
+                                 <th>تاريخ الصلاحية</th>
                                  <th>الإجمالي (ر.س)</th>
                              </tr>
                          </thead>
@@ -135,9 +158,11 @@
                              ${itemsHtmlForPrint}
                          </tbody>
                       </table>
-                      <div class="total">
-                         <span>إجمالي الفاتورة: </span>
-                         <span>${purchase.totalAmount.toFixed(2)} ر.س</span>
+                      <div class="totals">
+                         <div><span>حالة الدفع:</span> <span class="payment-status">${paymentInfo.text}</span></div>
+                         <div><span>المبلغ المدفوع:</span> ${purchase.amountPaid.toFixed(2)} ر.س</div>
+                         <div><span>المبلغ المتبقي:</span> ${(purchase.totalAmount - purchase.amountPaid).toFixed(2)} ر.س</div>
+                         <div><strong>إجمالي الفاتورة:</strong> <strong>${purchase.totalAmount.toFixed(2)} ر.س</strong></div>
                       </div>
                        <button onclick="window.print()">طباعة</button>
                        <button onclick="window.close()">إغلاق</button>
@@ -151,15 +176,23 @@
      };
 
      return (
-         <DialogContent className="sm:max-w-lg">
+         <DialogContent className="sm:max-w-2xl"> {/* Wider dialog */}
              <DialogHeader>
-                 <DialogTitle>تفاصيل فاتورة الشراء: {purchase.id}</DialogTitle>
+                 <DialogTitle>تفاصيل فاتورة الشراء: {purchase.invoiceNumber || purchase.id}</DialogTitle>
              </DialogHeader>
               {/* Content visible in the dialog */}
              <div className="py-4 space-y-4">
-                  <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                      <p><strong className="ml-1">المورد:</strong> {supplierName || purchase.supplierId}</p>
-                     <p><strong className="ml-1">تاريخ الفاتورة:</strong> {purchase.date.toLocaleDateString('ar-SA')}</p>
+                     <p><strong className="ml-1">تاريخ الفاتورة:</strong> {format(new Date(purchase.date), 'PPP', { locale: arSA })}</p>
+                     <p><strong className="ml-1">رقم فاتورة المورد:</strong> {purchase.invoiceNumber || '-'}</p>
+                     <p><strong className="ml-1">حالة الدفع:</strong>
+                        <Badge variant={paymentInfo.variant} className={cn("mr-1 px-1.5 py-0.5 text-xs", paymentInfo.color)}>
+                             <paymentInfo.icon className="ml-1 h-3 w-3" />
+                             {paymentInfo.text}
+                         </Badge>
+                     </p>
+
                  </div>
                  <Separator />
                  <h4 className="font-medium">الأصناف:</h4>
@@ -176,6 +209,7 @@
                                     <TableHead>المنتج</TableHead>
                                     <TableHead>الكمية</TableHead>
                                     <TableHead>التكلفة</TableHead>
+                                    <TableHead>الصلاحية</TableHead>
                                     <TableHead>الإجمالي</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -185,6 +219,7 @@
                                         <TableCell>{item.productName}</TableCell>
                                         <TableCell>{item.quantity}</TableCell>
                                         <TableCell>{item.cost.toFixed(2)} ر.س</TableCell>
+                                        <TableCell>{item.expiryDate ? format(new Date(item.expiryDate), 'MM/yyyy', {locale: arSA}) : '-'}</TableCell>
                                         <TableCell>{(item.quantity * item.cost).toFixed(2)} ر.س</TableCell>
                                     </TableRow>
                                 ))}
@@ -193,9 +228,13 @@
                      </div>
                  )}
                   <Separator />
-                  <div className="text-right text-lg font-bold mt-4">
-                     <span>إجمالي الفاتورة: </span>
-                     <span>{purchase.totalAmount.toFixed(2)} ر.س</span>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-right text-base mt-4">
+                     <span>المبلغ المدفوع:</span>
+                     <span className="font-semibold">{purchase.amountPaid.toFixed(2)} ر.س</span>
+                      <span>المبلغ المتبقي:</span>
+                      <span className="font-semibold">{(purchase.totalAmount - purchase.amountPaid).toFixed(2)} ر.س</span>
+                     <span className="text-lg font-bold col-start-1">إجمالي الفاتورة:</span>
+                     <span className="text-lg font-bold">{purchase.totalAmount.toFixed(2)} ر.س</span>
                  </div>
              </div>
 
@@ -267,16 +306,28 @@
      } catch (error) {
        console.error("Failed to add purchase:", error);
        toast({ title: "خطأ", description: "فشلت إضافة فاتورة الشراء.", variant: "destructive" });
+       // Optionally re-throw or handle differently
      }
    };
 
 
    const filteredPurchases = purchases.filter(purchase =>
      purchase.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (purchase.invoiceNumber && purchase.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
      suppliersMap.get(purchase.supplierId)?.toLowerCase().includes(searchTerm.toLowerCase()) ||
      purchase.items.some(item => item.productId.toLowerCase().includes(searchTerm.toLowerCase()))
       // TODO: Enhance search to fetch product names if needed for searching item names
    );
+
+     // Map Payment Status to Badge Variant and Text
+     const getPaymentStatusInfo = (status: PaymentStatus) => {
+         switch (status) {
+             case 'paid': return { variant: 'default', text: 'مدفوع', icon: CheckCircle, color: 'text-green-600' };
+             case 'partial': return { variant: 'secondary', text: 'جزئي', icon: AlertCircleIcon, color: 'text-orange-600' };
+             case 'unpaid': return { variant: 'destructive', text: 'غير مدفوع', icon: XCircle, color: 'text-red-600' };
+             default: return { variant: 'outline', text: status, icon: AlertCircleIcon, color: 'text-muted-foreground' };
+         }
+     };
 
    return (
       // Dialog for Add Purchase Form
@@ -300,7 +351,7 @@
 
                 <div className="flex items-center py-4">
                  <Input
-                   placeholder="ابحث برقم الفاتورة, المورد, أو كود المنتج..."
+                   placeholder="ابحث برقم الفاتورة, المورد, رقم فاتورة المورد..."
                    value={searchTerm}
                    onChange={(event) => setSearchTerm(event.target.value)}
                    className="max-w-md"
@@ -312,9 +363,11 @@
                    <TableHeader>
                      <TableRow>
                        <TableHead>رقم الفاتورة</TableHead>
+                       <TableHead>فاتورة المورد</TableHead>
                        <TableHead>المورد</TableHead>
                        <TableHead>تاريخ الفاتورة</TableHead>
-                       <TableHead>إجمالي المبلغ (ر.س)</TableHead>
+                       <TableHead>إجمالي المبلغ</TableHead>
+                       <TableHead>حالة الدفع</TableHead>
                         <TableHead>عدد الأصناف</TableHead>
                        <TableHead className="text-right">إجراءات</TableHead>
                      </TableRow>
@@ -322,31 +375,41 @@
                    <TableBody>
                      {isLoading ? (
                        <TableRow>
-                         <TableCell colSpan={6} className="h-24 text-center">
+                         <TableCell colSpan={8} className="h-24 text-center">
                            جاري تحميل الفواتير...
                          </TableCell>
                        </TableRow>
                      ) : filteredPurchases.length > 0 ? (
-                       filteredPurchases.map((purchase) => (
-                         <TableRow key={purchase.id}>
-                           <TableCell className="font-medium">{purchase.id}</TableCell>
-                           <TableCell>{suppliersMap.get(purchase.supplierId) || purchase.supplierId}</TableCell>
-                           <TableCell>{purchase.date.toLocaleDateString('ar-SA')}</TableCell>
-                           <TableCell>{purchase.totalAmount.toFixed(2)}</TableCell>
-                           <TableCell>{purchase.items.length}</TableCell>
-                           <TableCell className="text-right">
-                             <DialogTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedPurchase(purchase)}>
-                                     <Eye className="h-4 w-4" />
-                                  </Button>
-                             </DialogTrigger>
-                              {/* Add Edit button later if needed */}
-                           </TableCell>
-                         </TableRow>
-                       ))
+                       filteredPurchases.map((purchase) => {
+                            const paymentInfo = getPaymentStatusInfo(purchase.paymentStatus);
+                            return (
+                                <TableRow key={purchase.id}>
+                                    <TableCell className="font-medium">{purchase.id.substring(0, 8)}...</TableCell>
+                                    <TableCell>{purchase.invoiceNumber || '-'}</TableCell>
+                                    <TableCell>{suppliersMap.get(purchase.supplierId) || purchase.supplierId}</TableCell>
+                                    <TableCell>{format(new Date(purchase.date), 'dd/MM/yyyy', { locale: arSA })}</TableCell>
+                                    <TableCell>{purchase.totalAmount.toFixed(2)}</TableCell>
+                                    <TableCell>
+                                         <Badge variant={paymentInfo.variant} className={cn("px-1.5 py-0.5 text-xs", paymentInfo.color)}>
+                                             <paymentInfo.icon className="ml-1 h-3 w-3" />
+                                             {paymentInfo.text}
+                                         </Badge>
+                                    </TableCell>
+                                    <TableCell>{purchase.items.length}</TableCell>
+                                    <TableCell className="text-right">
+                                        <DialogTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedPurchase(purchase)}>
+                                                <Eye className="h-4 w-4" />
+                                            </Button>
+                                        </DialogTrigger>
+                                        {/* Add Edit/Delete buttons later if needed */}
+                                    </TableCell>
+                                </TableRow>
+                            );
+                        })
                      ) : (
                        <TableRow>
-                         <TableCell colSpan={6} className="h-24 text-center">
+                         <TableCell colSpan={8} className="h-24 text-center">
                            لا توجد فواتير شراء لعرضها.
                          </TableCell>
                        </TableRow>
@@ -366,7 +429,7 @@
         </Dialog>
 
           {/* Add Purchase Form Dialog Content */}
-         <DialogContent className="sm:max-w-3xl"> {/* Wider dialog for the form */}
+         <DialogContent className="sm:max-w-4xl"> {/* Wider dialog for the form */}
             <DialogHeader>
                <DialogTitle>إنشاء فاتورة شراء جديدة</DialogTitle>
             </DialogHeader>

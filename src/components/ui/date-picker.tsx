@@ -19,9 +19,10 @@ interface DatePickerProps {
     date: Date | undefined;
     setDate: (date: Date | undefined) => void;
     buttonClassName?: string;
+    buttonContent?: React.ReactNode; // Optional: Content to show when no date is selected
 }
 
-export function DatePicker({ date, setDate, buttonClassName }: DatePickerProps) {
+export function DatePicker({ date, setDate, buttonClassName, buttonContent }: DatePickerProps) {
 
   return (
     <Popover>
@@ -35,7 +36,7 @@ export function DatePicker({ date, setDate, buttonClassName }: DatePickerProps) 
           )}
         >
           <CalendarIcon className="mr-2 h-4 w-4" />
-          {date ? format(date, "PPP", { locale: arSA }) : <span>اختر تاريخ</span>}
+           {date ? format(date, "PPP", { locale: arSA }) : (buttonContent || <span>اختر تاريخ</span>)}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0">

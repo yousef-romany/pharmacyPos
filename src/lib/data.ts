@@ -1,5 +1,5 @@
 
-import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User, ProductExpiryInfo } from '@/lib/types';
+import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User, ProductExpiryInfo, PaymentMethod, PaymentStatus, UserRole } from '@/lib/types';
 import { Pill, Baby, SprayCan, Activity } from 'lucide-react';
 import { differenceInDays, addDays, isBefore, isSameDay } from 'date-fns';
 
@@ -9,6 +9,8 @@ let sampleProducts: Product[] = [
     id: 'prod-001',
     nameAr: 'بنادول اكسترا',
     nameEn: 'Panadol Extra',
+    manufacturer: 'GSK', // Added
+    concentration: '500mg Paracetamol, 65mg Caffeine', // Added
     price: 15.50, // Price per box
     quantity: 8, // Boxes in stock - LOW STOCK EXAMPLE
     categoryIcon: Pill,
@@ -24,6 +26,8 @@ let sampleProducts: Product[] = [
     id: 'prod-002',
     nameAr: 'فيتامين سي فوار',
     nameEn: 'Vitamin C Effervescent',
+    manufacturer: 'Generic Pharma', // Added
+    concentration: '1000mg Vitamin C', // Added
     price: 22.00, // Price per tube/box
     quantity: 80,
     categoryIcon: Activity,
@@ -38,6 +42,7 @@ let sampleProducts: Product[] = [
     id: 'prod-003',
     nameAr: 'حليب أطفال المرحلة 1',
     nameEn: 'Baby Milk Stage 1',
+    manufacturer: 'Nestle', // Added
     price: 55.75,
     quantity: 45,
     categoryIcon: Baby,
@@ -50,6 +55,8 @@ let sampleProducts: Product[] = [
     id: 'prod-004',
     nameAr: 'بخاخ الأنف',
     nameEn: 'Nasal Spray',
+    manufacturer: 'Pharma Co.', // Added
+    concentration: '0.05% Oxymetazoline', // Added
     price: 30.00,
     quantity: 60,
     categoryIcon: SprayCan,
@@ -62,6 +69,8 @@ let sampleProducts: Product[] = [
     id: 'prod-005',
     nameAr: 'أقراص مسكنة للألم',
     nameEn: 'Pain Relief Tablets',
+    manufacturer: 'Jamjoom Pharma', // Added
+    concentration: '400mg Ibuprofen', // Added
     price: 12.25, // Price per box
     quantity: 200, // Boxes in stock
     categoryIcon: Pill,
@@ -76,6 +85,7 @@ let sampleProducts: Product[] = [
     id: 'prod-006',
     nameAr: 'مكمل غذائي حديد',
     nameEn: 'Iron Supplement',
+    manufacturer: 'VitaHealth', // Added
     price: 40.00,
     quantity: 5, // LOW STOCK EXAMPLE
     categoryIcon: Activity,
@@ -88,6 +98,7 @@ let sampleProducts: Product[] = [
     id: 'prod-007',
     nameAr: 'كريم حفاضات للأطفال',
     nameEn: 'Baby Diaper Cream',
+    manufacturer: 'Sudocrem', // Added
     price: 25.50,
     quantity: 70,
     categoryIcon: Baby,
@@ -101,6 +112,7 @@ let sampleProducts: Product[] = [
     id: 'prod-008',
     nameAr: 'شراب سعال',
     nameEn: 'Cough Syrup',
+    manufacturer: 'Prospan', // Added
     price: 18.00,
     quantity: 110,
     categoryIcon: SprayCan, // Placeholder, could be Bottle icon
@@ -142,6 +154,8 @@ export async function addProduct(productData: Omit<Product, 'id'>): Promise<Prod
     id: `prod-${Date.now().toString()}-${Math.random().toString(16).substring(2, 8)}`, // Generate unique ID
     nameAr: productData.nameAr,
     nameEn: productData.nameEn,
+    manufacturer: productData.manufacturer, // Added
+    concentration: productData.concentration, // Added
     price: productData.price || 0,
     quantity: productData.quantity || 0,
     categoryIcon: productData.categoryIcon || Pill, // Default icon
@@ -291,23 +305,26 @@ let sampleCustomers: Customer[] = [
     name: 'خالد الغامدي',
     phone: '050-1122334',
     address: 'الرياض، حي الملز',
+    balance: -50.00, // Has debt
   },
   {
     id: 'cust-002',
     name: 'فاطمة الزهراني',
     phone: '055-9988776',
     email: 'fatima.z@email.com',
+    balance: 0,
   },
    {
     id: 'cust-003',
     name: 'علي الشهري',
     address: 'جدة، حي الشاطئ',
+    balance: 100.00, // Has credit
   },
 ];
 
 export async function getCustomers(): Promise<Customer[]> {
   await new Promise(resolve => setTimeout(resolve, 50));
-  return [...sampleCustomers]; // Return a copy
+  return [...sampleCustomers.map(c => ({ ...c, balance: c.balance ?? 0 }))]; // Ensure balance is initialized
 }
 
 export async function addCustomer(customerData: Omit<Customer, 'id'>): Promise<Customer> {
@@ -315,6 +332,7 @@ export async function addCustomer(customerData: Omit<Customer, 'id'>): Promise<C
   const newCustomer: Customer = {
     ...customerData,
     id: `cust-${Date.now().toString()}-${Math.random().toString(16).substring(2, 8)}`,
+    balance: customerData.balance ?? 0, // Initialize balance
   };
   sampleCustomers.push(newCustomer);
    console.log("Added Customer:", newCustomer);
@@ -326,7 +344,12 @@ export async function updateCustomer(id: string, updates: Partial<Customer>): Pr
   await new Promise(resolve => setTimeout(resolve, 50));
   const index = sampleCustomers.findIndex(c => c.id === id);
   if (index === -1) return null;
-  sampleCustomers[index] = { ...sampleCustomers[index], ...updates };
+  // Ensure balance is handled correctly
+  const updatedCustomer = { ...sampleCustomers[index], ...updates };
+   if (typeof updatedCustomer.balance !== 'number') {
+     updatedCustomer.balance = sampleCustomers[index].balance ?? 0;
+   }
+  sampleCustomers[index] = updatedCustomer;
    console.log("Updated Customer:", sampleCustomers[index]);
    console.log("Current Customers:", sampleCustomers);
   return sampleCustomers[index];
@@ -345,25 +368,50 @@ export async function deleteCustomer(id: string): Promise<boolean> {
 // --- Transactions (Invoices) Data ---
 let sampleSales: SaleTransaction[] = [];
 let samplePurchases: PurchaseTransaction[] = [
-     // Add some initial purchase data for testing
-    { id: 'pur-001', supplierId: 'supp-001', items: [{ productId: 'prod-001', quantity: 100, cost: 10.50 }, { productId: 'prod-005', quantity: 150, cost: 8.00 }], totalAmount: 2250.00, date: new Date(2024, 6, 14) },
-    { id: 'pur-002', supplierId: 'supp-002', items: [{ productId: 'prod-003', quantity: 50, cost: 45.00 }], totalAmount: 2250.00, date: new Date(2024, 6, 13) },
+    { id: 'pur-001', supplierId: 'supp-001', invoiceNumber: 'INV-SUP-1001', items: [{ productId: 'prod-001', quantity: 100, cost: 10.50 }, { productId: 'prod-005', quantity: 150, cost: 8.00 }], totalAmount: 2250.00, paymentStatus: 'paid', amountPaid: 2250.00, date: new Date(2024, 6, 14) },
+    { id: 'pur-002', supplierId: 'supp-002', invoiceNumber: 'INV-SUP-1002', items: [{ productId: 'prod-003', quantity: 50, cost: 45.00 }], totalAmount: 2250.00, paymentStatus: 'partial', amountPaid: 1000.00, date: new Date(2024, 6, 13) },
+    { id: 'pur-003', supplierId: 'supp-003', items: [{ productId: 'prod-008', quantity: 200, cost: 15.00 }], totalAmount: 3000.00, paymentStatus: 'unpaid', amountPaid: 0.00, date: new Date(2024, 6, 15) },
 ];
 
 export async function getSales(): Promise<SaleTransaction[]> {
   await new Promise(resolve => setTimeout(resolve, 50));
   // Sort sales by date descending before returning
-  return [...sampleSales].sort((a, b) => b.date.getTime() - a.date.getTime());
+  return [...sampleSales].map(s => ({
+      ...s,
+      date: new Date(s.date) // Ensure date is Date object
+    })).sort((a, b) => b.date.getTime() - a.date.getTime());
 }
 
 // Function to add a sale and update product quantities
 export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<SaleTransaction> {
     await new Promise(resolve => setTimeout(resolve, 50)); // Simulate delay
 
+     // Calculate original total amount before discount
+    const calculateOriginalTotal = async (items: SaleTransactionItem[]): Promise<number> => {
+        let originalTotal = 0;
+        for (const item of items) {
+            const product = await getProductById(item.productId);
+            if (product) {
+                 const originalPrice = item.soldUnitType === 'sub' && product.subUnitsPerUnit
+                     ? product.price / product.subUnitsPerUnit
+                     : product.price;
+                 originalTotal += originalPrice * item.quantity;
+            } else {
+                 // Fallback if product details are missing, use the sale price as original
+                 originalTotal += item.price * item.quantity;
+            }
+        }
+        return originalTotal;
+    };
+
+
+    const originalTotalAmount = await calculateOriginalTotal(saleData.items);
+
     const newSale: SaleTransaction = {
         ...saleData,
         id: `sale-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`, // Unique sale ID
         date: saleData.date || new Date(), // Ensure date exists
+        originalTotalAmount: originalTotalAmount, // Store original total
     };
     sampleSales.push(newSale);
     console.log("Added Sale:", newSale);
@@ -392,6 +440,28 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
     }));
     console.log("Product quantities updated after sale.");
 
+    // --- Update Customer Balance if it's a debt transaction ---
+    if (newSale.customerId && newSale.paymentMethod === 'debt') {
+       const customer = await getCustomerById(newSale.customerId);
+       if (customer) {
+           const debtAmount = newSale.totalAmount - newSale.amountPaid; // Calculate the debt incurred
+           const newBalance = (customer.balance || 0) - debtAmount; // Decrease balance (more negative means more debt)
+           await updateCustomer(newSale.customerId, { balance: newBalance });
+           console.log(`Updated customer ${newSale.customerId} balance to ${newBalance}`);
+       } else {
+            console.warn(`Customer with ID ${newSale.customerId} not found for debt update.`);
+       }
+    } else if (newSale.customerId && newSale.paymentMethod !== 'debt' && newSale.amountPaid > newSale.totalAmount) {
+        // Handle overpayment potentially increasing balance (credit)
+         const customer = await getCustomerById(newSale.customerId);
+         if (customer) {
+             const creditAmount = newSale.amountPaid - newSale.totalAmount;
+             const newBalance = (customer.balance || 0) + creditAmount;
+             await updateCustomer(newSale.customerId, { balance: newBalance });
+              console.log(`Updated customer ${newSale.customerId} balance to ${newBalance} due to overpayment.`);
+         }
+    }
+
     return newSale;
 }
 
@@ -399,16 +469,36 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
 // Function to get purchase transactions
 export async function getPurchases(): Promise<PurchaseTransaction[]> {
   await new Promise(resolve => setTimeout(resolve, 50));
-  return [...samplePurchases].sort((a, b) => b.date.getTime() - a.date.getTime()); // Return sorted copy
+   return [...samplePurchases].map(p => ({
+      ...p,
+      date: new Date(p.date) // Ensure date is Date object
+   })).sort((a, b) => b.date.getTime() - a.date.getTime()); // Return sorted copy
 }
 
 // Function to add a purchase transaction and update product quantities
 export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id'>): Promise<PurchaseTransaction> {
     await new Promise(resolve => setTimeout(resolve, 50));
+
+     // Calculate total amount from items cost
+     const totalAmount = purchaseData.items.reduce((sum, item) => sum + item.quantity * item.cost, 0);
+
+     // Determine payment status based on amountPaid
+     let paymentStatus: PaymentStatus;
+     if (purchaseData.amountPaid >= totalAmount) {
+         paymentStatus = 'paid';
+     } else if (purchaseData.amountPaid > 0) {
+         paymentStatus = 'partial';
+     } else {
+         paymentStatus = 'unpaid';
+     }
+
+
     const newPurchase: PurchaseTransaction = {
         ...purchaseData,
         id: `pur-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`, // Unique purchase ID
         date: purchaseData.date || new Date(), // Ensure date exists
+        totalAmount: totalAmount, // Set calculated total amount
+        paymentStatus: paymentStatus, // Set calculated payment status
     };
     samplePurchases.push(newPurchase);
     console.log("Added Purchase:", newPurchase);
@@ -420,8 +510,14 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id'>)
             const newQuantity = product.quantity + item.quantity;
             // Update cost only if needed (e.g., based on FIFO/LIFO or average cost)
             // For simplicity, we might just update quantity here. Cost update logic depends on requirements.
-            await updateProduct(item.productId, { quantity: newQuantity /* , cost: newCost */ });
-            console.log(`Updated product ${item.productId} quantity to ${newQuantity}`);
+             // Also update expiry date if provided in the purchase item
+            const updates: Partial<Omit<Product, 'id'>> = { quantity: newQuantity };
+            if (item.expiryDate) {
+                updates.expiryDate = new Date(item.expiryDate);
+            }
+
+            await updateProduct(item.productId, updates);
+            console.log(`Updated product ${item.productId} quantity to ${newQuantity} ${updates.expiryDate ? `and expiry to ${updates.expiryDate.toLocaleDateString()}` : ''}`);
         } else {
             console.warn(`Product with ID ${item.productId} not found during purchase update.`);
             // Handle adding the product if it doesn't exist (or log error)
@@ -440,11 +536,20 @@ export async function getProductNameById(id: string): Promise<string> {
     return product ? product.nameAr : `منتج غير معروف (${id.substring(0,6)})`;
 }
 
+// --- Helper to get customer by ID ---
+export async function getCustomerById(id: string): Promise<Customer | undefined> {
+   await new Promise(resolve => setTimeout(resolve, 20));
+   const customer = sampleCustomers.find(c => c.id === id);
+   return customer ? { ...customer, balance: customer.balance ?? 0 } : undefined;
+}
+
+
 // --- User Management Data ---
 let sampleUsers: User[] = [
   { id: 'user-001', name: 'Admin User', email: 'admin@example.com', role: 'admin' },
   { id: 'user-002', name: 'Seller User', email: 'seller@example.com', role: 'seller' },
   { id: 'user-003', name: 'Manager User', email: 'manager@example.com', role: 'manager' },
+   { id: 'user-004', name: 'Accountant User', email: 'accountant@example.com', role: 'accountant' },
 ];
 
 export async function getUsers(): Promise<User[]> {
@@ -453,6 +558,39 @@ export async function getUsers(): Promise<User[]> {
 }
 
 // Add functions for addUser, updateUser, deleteUser later as needed
+export async function addUser(userData: Omit<User, 'id'>): Promise<User> {
+  await new Promise(resolve => setTimeout(resolve, 50));
+  const newUser: User = {
+    ...userData,
+    id: `user-${Date.now().toString()}-${Math.random().toString(16).substring(2, 8)}`,
+  };
+  sampleUsers.push(newUser);
+   console.log("Added User:", newUser);
+   console.log("Current Users:", sampleUsers);
+  return newUser;
+}
+
+export async function updateUser(id: string, updates: Partial<User>): Promise<User | null> {
+  await new Promise(resolve => setTimeout(resolve, 50));
+  const index = sampleUsers.findIndex(u => u.id === id);
+  if (index === -1) return null;
+  // Prevent changing ID
+  const { id: _, ...safeUpdates } = updates;
+  sampleUsers[index] = { ...sampleUsers[index], ...safeUpdates };
+    console.log("Updated User:", sampleUsers[index]);
+    console.log("Current Users:", sampleUsers);
+  return sampleUsers[index];
+}
+
+export async function deleteUser(id: string): Promise<boolean> {
+  await new Promise(resolve => setTimeout(resolve, 50));
+  const initialLength = sampleUsers.length;
+  sampleUsers = sampleUsers.filter(u => u.id !== id);
+   const success = sampleUsers.length < initialLength;
+  console.log(`Deleted User ${id}?`, success);
+  console.log("Current Users:", sampleUsers);
+  return success;
+}
 
 
 // --- Expiry Date Logic ---
@@ -461,8 +599,10 @@ export function calculateDaysUntilExpiry(expiryDate?: Date): number {
     const today = new Date();
     // Set time to 00:00:00 for accurate day difference calculation
     today.setHours(0, 0, 0, 0);
-    expiryDate.setHours(0, 0, 0, 0);
-    return differenceInDays(expiryDate, today);
+    // Make a copy before modifying
+    const expiryDateNormalized = new Date(expiryDate);
+    expiryDateNormalized.setHours(0, 0, 0, 0);
+    return differenceInDays(expiryDateNormalized, today);
 }
 
 
@@ -514,4 +654,32 @@ export async function getExpiredProducts(): Promise<ProductExpiryInfo[]> {
         quantity,
         daysUntilExpiry,
     }));
+}
+
+// --- Reports (Placeholders - Implement complex logic later) ---
+
+// Example: Get total sales value for a period (e.g., today)
+export async function getTotalSalesForToday(): Promise<number> {
+    const sales = await getSales();
+    const today = new Date();
+    const total = sales
+        .filter(sale => isSameDay(new Date(sale.date), today))
+        .reduce((sum, sale) => sum + sale.totalAmount, 0);
+    return total;
+}
+
+// Example: Get total purchases value for a period (e.g., today)
+export async function getTotalPurchasesForToday(): Promise<number> {
+    const purchases = await getPurchases();
+    const today = new Date();
+    const total = purchases
+        .filter(purchase => isSameDay(new Date(purchase.date), today))
+        .reduce((sum, purchase) => sum + purchase.totalAmount, 0);
+    return total;
+}
+
+// Example: Get customers with debt (negative balance)
+export async function getCustomersWithDebt(): Promise<Customer[]> {
+    const customers = await getCustomers();
+    return customers.filter(customer => (customer.balance ?? 0) < 0);
 }
