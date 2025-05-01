@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -33,7 +34,7 @@ import { useCart } from '@/hooks/use-cart'; // Import useCart
 
 // Sidebar Navigation Items
 const sidebarNavItems = [
-  { href: '/', icon: Home, label: 'لوحة التحكم' },
+  { href: '/dashboard', icon: Home, label: 'لوحة التحكم' }, // Changed href to /dashboard
   { href: '/pos', icon: ShoppingCart, label: 'نقطة البيع', badge: true }, // Added badge marker
   { href: '/products', icon: Pill, label: 'الأصناف' }, // Changed icon
   { href: '/suppliers', icon: Building, label: 'الموردين' },
@@ -70,20 +71,17 @@ export default function DashboardLayout({
   }, [isClient, getItemCount, pathname]); // Update when pathname changes too, in case cart updates outside layout
 
   return (
-    <SidebarProvider defaultOpen>
+    <SidebarProvider defaultOpen side="right"> {/* Set side to right here */}
       <div className="flex min-h-screen bg-background">
-        <Sidebar side="right" collapsible="icon">
-          {' '}
-          {/* Sidebar on the right */}
+        <Sidebar /* Removed side prop here, comes from provider */ collapsible="icon">
           <SidebarHeader className="p-4 items-center">
             <div className="flex items-center gap-2 flex-grow">
               <Package className="w-7 h-7 text-primary" />
-              <h1 className="text-lg font-semibold text-primary whitespace-nowrap group-data-[collapsible=icon]:hidden">
+              <h1 className="text-lg font-semibold text-primary whitespace-nowrap group-data-[state=collapsed]:group-data-[collapsible=icon]:hidden"> {/* Use state for hiding */}
                 صيدليتي
               </h1>
             </div>
-            <SidebarTrigger className="ml-auto group-data-[collapsible=icon]:ml-0" />{' '}
-            {/* Adjust trigger position */}
+            <SidebarTrigger className="ml-auto group-data-[state=collapsed]:group-data-[collapsible=icon]:ml-0" /> {/* Use state for positioning */}
           </SidebarHeader>
           <SidebarContent className="flex-1 overflow-y-auto">
             <SidebarMenu>
@@ -91,21 +89,23 @@ export default function DashboardLayout({
                 <SidebarMenuItem key={item.href}>
                   <Link href={item.href} legacyBehavior passHref>
                     <SidebarMenuButton
-                      asChild
+                      asChild // Use asChild to pass props to the underlying Link -> a
                       isActive={
                         pathname === item.href ||
                         (item.href !== '/' && pathname.startsWith(item.href))
                       }
                       className="justify-end" // Align content to the right
                       tooltip={item.label}
+                      variant="default" // Ensure variant is passed if needed
+                      size="default" // Ensure size is passed if needed
                     >
-                      <a>
+                      <a> {/* The actual element receiving the button styles */}
                         <item.icon />
                         <span>{item.label}</span>
                         {item.badge && isClient && cartItemCount > 0 && (
                            <Badge
                             variant="destructive"
-                            className="absolute top-1 left-1 h-5 w-5 p-0 flex items-center justify-center rounded-full text-xs group-data-[collapsible=icon]:hidden"
+                            className="absolute top-1 left-1 h-5 w-5 p-0 flex items-center justify-center rounded-full text-xs group-data-[state=collapsed]:group-data-[collapsible=icon]:hidden" // Use state for hiding
                              style={{ lineHeight: '1' }}
                           >
                             {cartItemCount}
@@ -128,6 +128,8 @@ export default function DashboardLayout({
                       isActive={pathname.startsWith(item.href)}
                       className="justify-end" // Align content to the right
                       tooltip={item.label}
+                      variant="default"
+                      size="default"
                     >
                       <a>
                         <item.icon />
@@ -140,9 +142,11 @@ export default function DashboardLayout({
               {/* Basic Logout Button Example */}
                <SidebarMenuItem>
                  <SidebarMenuButton
-                    className="justify-end text-destructive hover:bg-destructive/10"
+                    className="justify-end" // Align content to the right
                     tooltip="تسجيل الخروج"
                      onClick={() => alert('تسجيل الخروج غير متاح بعد.')} // Placeholder action
+                     variant="destructive" // Use destructive variant
+                     size="default"
                   >
                      <LogOut />
                     <span>تسجيل الخروج</span>
@@ -156,3 +160,4 @@ export default function DashboardLayout({
     </SidebarProvider>
   );
 }
+
