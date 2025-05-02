@@ -16,25 +16,35 @@ interface CartItemProps {
 
 // Helper to get available quantity in terms of the selected unit
 const getAvailableQuantity = (product: CartItemType, selectedUnitType: 'main' | 'sub'): number => {
+    // Use parseFloatFromDB or similar robust parsing if product.quantity can be a string
+    const quantityNum = parseFloat(product.quantity.toString()); // Ensure it's a number
+    if (isNaN(quantityNum)) return 0;
+
     if (selectedUnitType === 'sub' && product.subUnitsPerUnit) {
         // Convert main unit quantity to sub-unit quantity
         // Use floor to prevent selling fractions of sub-units if main quantity is fractional
-        return Math.floor(product.quantity * product.subUnitsPerUnit);
+        return Math.floor(quantityNum * product.subUnitsPerUnit);
     }
     // For main unit, return the quantity directly, flooring for safety
-    return Math.floor(product.quantity);
+    return Math.floor(quantityNum);
 };
 
 // Helper to calculate original price before discount
 const calculateOriginalPrice = (item: CartItemType): number => {
+     const priceNum = parseFloat(item.price.toString()); // Ensure it's a number
+     const pricePerSelectedUnitNum = parseFloat(item.pricePerSelectedUnit.toString()); // Ensure it's a number
+     const discountRateNum = item.discountRate ? parseFloat(item.discountRate.toString()) : 0; // Ensure it's a number
+
+     if (isNaN(priceNum) || isNaN(pricePerSelectedUnitNum) || isNaN(discountRateNum)) return 0;
+
      const basePrice = item.selectedUnitType === 'sub'
-        ? (item.price / (item.subUnitsPerUnit || 1))
-        : item.price;
+        ? (priceNum / (item.subUnitsPerUnit || 1))
+        : priceNum;
      // If discount was applied, calculate original from discounted price
-     if (item.discountRate && item.pricePerSelectedUnit !== basePrice) {
-         return item.pricePerSelectedUnit / (1 - item.discountRate / 100);
+     if (discountRateNum > 0 && pricePerSelectedUnitNum !== basePrice) {
+         return pricePerSelectedUnitNum / (1 - discountRateNum / 100);
      }
-     return item.pricePerSelectedUnit; // No discount, return the stored price
+     return pricePerSelectedUnitNum; // No discount, return the stored price
 };
 
 export function CartItem({ item }: CartItemProps) {
@@ -50,12 +60,30 @@ export function CartItem({ item }: CartItemProps) {
   const unitLabel = item.selectedUnitType === 'sub' ? item.subUnitType : item.unitType;
   const availableStockInSelectedUnit = getAvailableQuantity(item, item.selectedUnitType);
   const originalPrice = calculateOriginalPrice(item); // Calculate original price
-  const hasDiscount = item.discountRate && item.discountRate > 0 && originalPrice !== item.pricePerSelectedUnit;
+  const hasDiscount = item.discountRate && parseFloat(item.discountRate.toString()) > 0 && originalPrice !== parseFloat(item.pricePerSelectedUnit.toString());
+
+    // Ensure pricePerSelectedUnit is a number for calculation
+    const pricePerSelectedUnitNum = parseFloat(item.pricePerSelectedUnit.toString());
+    const itemTotal = isNaN(pricePerSelectedUnitNum) ? 0 : pricePerSelectedUnitNum * quantity;
+    const originalItemTotal = isNaN(originalPrice) ? 0 : originalPrice * quantity;
 
 
   const handleQuantityChange = (newQuantity: number) => {
-    // Validate quantity: must be >= 0 and <= available stock for the selected unit
-    const validatedQuantity = Math.max(0, Math.min(newQuantity, availableStockInSelectedUnit));
+    // Validate quantity: must be >= 0
+    const validatedQuantity = Math.max(0, newQuantity);
+
+    // Check against available stock BEFORE updating
+    if (validatedQuantity > availableStockInSelectedUnit) {
+        toast({
+             title: "الكمية غير متوفرة",
+             description: `الكمية المتاحة لـ ${item.nameAr} (${unitLabel}) هي ${availableStockInSelectedUnit}.`,
+             variant: "destructive",
+           });
+         setQuantity(availableStockInSelectedUnit); // Reset local input to max available
+         updateItemQuantity(item.id, item.selectedUnitType, availableStockInSelectedUnit); // Update cart to max available
+         return; // Stop further processing
+    }
+
     setQuantity(validatedQuantity); // Update local state immediately
 
     // Update global cart state only if the validated quantity is different from current cart quantity
@@ -70,13 +98,6 @@ export function CartItem({ item }: CartItemProps) {
              variant: "destructive",
            });
         }
-    } else if (newQuantity > availableStockInSelectedUnit) {
-        // Inform user if they tried to exceed stock
-         toast({
-             title: "الكمية غير متوفرة",
-             description: `الكمية المتاحة لـ ${item.nameAr} (${unitLabel}) هي ${availableStockInSelectedUnit}.`,
-             variant: "destructive",
-           });
     }
   };
 
@@ -85,13 +106,19 @@ export function CartItem({ item }: CartItemProps) {
     if (!isNaN(value)) {
       handleQuantityChange(value);
     } else if (e.target.value === '') {
-        setQuantity(0);
+        setQuantity(0); // Allow clearing the input, will handle on blur/change
     }
   };
 
-  const handleBlur = () => {
-       handleQuantityChange(quantity);
-  };
+   const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+     // Ensure the final quantity is validated against stock on blur
+     const value = parseInt(e.target.value, 10);
+     if (isNaN(value) || value <= 0) {
+       handleQuantityChange(0); // Set to 0 if invalid or empty on blur
+     } else {
+       handleQuantityChange(value); // Validate final number against stock
+     }
+   };
 
 
   const handleRemove = () => {
@@ -109,9 +136,9 @@ export function CartItem({ item }: CartItemProps) {
       <div className="flex-1 min-w-0 mr-4">
         <p className="font-medium truncate">{item.nameAr} <span className="text-xs text-muted-foreground">({unitLabel})</span></p>
         <div className="flex items-baseline gap-1">
-             <p className="text-sm text-foreground font-semibold">{(item.pricePerSelectedUnit * quantity).toFixed(2)} ر.س</p>
+             <p className="text-sm text-foreground font-semibold">{itemTotal.toFixed(2)} ر.س</p>
              {hasDiscount && (
-                 <p className="text-xs text-muted-foreground line-through">{(originalPrice * quantity).toFixed(2)} ر.س</p>
+                 <p className="text-xs text-muted-foreground line-through">{originalItemTotal.toFixed(2)} ر.س</p>
              )}
          </div>
       </div>
@@ -129,8 +156,8 @@ export function CartItem({ item }: CartItemProps) {
         <Input
           type="number"
           min="0"
-          max={availableStockInSelectedUnit}
-           value={quantity === 0 && document.activeElement === event?.target ? '' : quantity.toString()}
+          // No max here, validation is handled in the change handler
+           value={quantity.toString()} // Controlled component
           onChange={handleInputChange}
           onBlur={handleBlur}
           className="h-8 w-14 text-center px-1"
@@ -141,7 +168,8 @@ export function CartItem({ item }: CartItemProps) {
           size="icon"
           className="h-8 w-8"
           onClick={() => handleQuantityChange(quantity + 1)}
-          disabled={quantity >= availableStockInSelectedUnit}
+           // Disable if trying to increase beyond stock
+           disabled={quantity >= availableStockInSelectedUnit}
           aria-label="Increase quantity"
         >
           <Plus className="h-4 w-4" />

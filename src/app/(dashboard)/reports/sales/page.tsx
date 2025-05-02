@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -15,10 +16,17 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // For potential filtering
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'; // For filter popover
 import { SaleDetailsDialog } from '@/app/(dashboard)/sales/page'; // Reuse SaleDetailsDialog if appropriate, adjust path if needed
-import { Dialog } from '@/components/ui/dialog'; // Import Dialog for the wrapper
+import { Dialog, DialogTrigger } from '@/components/ui/dialog'; // Import Dialog for the wrapper
 
 // Helper to determine if SaleDetailsDialog is defined (adjust path if needed)
 const isSaleDetailsDialogAvailable = typeof SaleDetailsDialog !== 'undefined';
+
+// Helper function to safely parse floats (can be moved to utils)
+const safeParseFloat = (value: string | number | null | undefined, defaultValue = 0): number => {
+    if (value === null || value === undefined) return defaultValue;
+    const parsed = parseFloat(value.toString());
+    return isNaN(parsed) ? defaultValue : parsed;
+};
 
 
 export default function SalesReportPage() {
@@ -92,7 +100,7 @@ export default function SalesReportPage() {
     setFilteredSales(results.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())); // Sort by date desc
   }, [sales, dateFrom, dateTo, customerFilter, paymentMethodFilter, customers]);
 
-  const totalFilteredSalesAmount = filteredSales.reduce((sum, sale) => sum + sale.totalAmount, 0);
+  const totalFilteredSalesAmount = filteredSales.reduce((sum, sale) => sum + safeParseFloat(sale.totalAmount), 0);
 
 
   const resetFilters = () => {
@@ -229,14 +237,16 @@ export default function SalesReportPage() {
                           <TableCell>{sale.customerId ? (customers.get(sale.customerId) || sale.customerId) : 'عميل نقدي'}</TableCell>
                           <TableCell>{format(new Date(sale.date), 'dd/MM/yyyy HH:mm', { locale: arSA })}</TableCell>
                           <TableCell>{sale.paymentMethod}</TableCell> {/* TODO: Enhance display */}
-                          <TableCell>{sale.totalAmount.toFixed(2)}</TableCell>
+                          <TableCell>{safeParseFloat(sale.totalAmount).toFixed(2)}</TableCell>
                           <TableCell className="text-right">
                                {/* Use DialogTrigger directly here if SaleDetailsDialog is defined */}
-                               <Dialog.Trigger asChild>
-                                   <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedSale(sale)}>
-                                     <Eye className="h-4 w-4" />
-                                   </Button>
-                               </Dialog.Trigger>
+                               {isSaleDetailsDialogAvailable && (
+                                   <DialogTrigger asChild>
+                                       <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedSale(sale)}>
+                                         <Eye className="h-4 w-4" />
+                                       </Button>
+                                   </DialogTrigger>
+                               )}
                           </TableCell>
                         </TableRow>
                       ))
@@ -266,5 +276,3 @@ export default function SalesReportPage() {
     </Dialog>
   );
 }
-
-// Removed the commented-out MinimalSaleDetailsDialog as SaleDetailsDialog is being imported/used

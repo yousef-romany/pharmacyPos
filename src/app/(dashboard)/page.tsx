@@ -9,7 +9,7 @@ export default function DashboardRedirectPage() {
 
   useEffect(() => {
     // Redirect immediately to the main dashboard page
-    router.replace('/dashboard/dashboard');
+    router.replace('/dashboard');
   }, [router]);
 
   // Optional: Render a loading state or nothing while redirecting

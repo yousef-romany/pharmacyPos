@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -23,7 +22,8 @@ import {
   Receipt,
   Truck, // For Purchases
   Archive, // For Inventory
-  Landmark, // For Treasury
+  Landmark, // For Treasury (keep for general finance concept if needed)
+  Banknote, // Use Banknote specifically for Treasury/Accounts page
   Settings,
   LogOut,
   Pill, // For Products
@@ -32,6 +32,7 @@ import {
   Building2, // For Suppliers (replaced Building)
   HandCoins, // For Sales (replaced Receipt)
   Gauge, // For Dashboard (replaced Home)
+  Warehouse as WarehouseIcon, // Keep for Inventory link if separate
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -52,14 +53,14 @@ interface NavItem {
 
 // Sidebar Navigation Items with Role Restrictions
 const mainNavItems: NavItem[] = [
-  { href: '/dashboard/dashboard', icon: Gauge, label: 'لوحة التحكم' }, // All authenticated users
+  { href: '/dashboard', icon: Gauge, label: 'لوحة التحكم' }, // All authenticated users
   { href: '/pos', icon: ShoppingCart, label: 'نقطة البيع', badge: true, requiredRoles: ['admin', 'manager', 'seller'] },
   { href: '/products', icon: Pill, label: 'الأصناف', requiredRoles: ['admin', 'manager'] },
   { href: '/purchases', icon: Truck, label: 'المشتريات', requiredRoles: ['admin', 'manager', 'accountant'] },
   { href: '/suppliers', icon: Building2, label: 'الموردين', requiredRoles: ['admin', 'manager', 'accountant'] },
   { href: '/customers', icon: UserIcon, label: 'العملاء', requiredRoles: ['admin', 'manager', 'seller'] },
   { href: '/sales', icon: HandCoins, label: 'فواتير البيع', requiredRoles: ['admin', 'manager', 'seller', 'accountant'] },
-  { href: '/inventory', icon: Archive, label: 'المخزون', requiredRoles: ['admin', 'manager'] },
+  { href: '/inventory', icon: WarehouseIcon, label: 'المخازن والمخزون', requiredRoles: ['admin', 'manager'] }, // Combined inventory/warehouse management
 ];
 
 // Reports Navigation Items (for Accordion) with Role Restrictions
@@ -72,9 +73,9 @@ const reportNavItems: Omit<NavItem, 'icon'>[] = [
 
 
 const settingsNavItems: NavItem[] = [
-    { href: '/settings', icon: Settings, label: 'الإعدادات', requiredRoles: ['admin'] },
-    { href: '/users', icon: Users, label: 'المستخدمين', requiredRoles: ['admin'] },
-    { href: '/treasury', icon: Landmark, label: 'الخزنة', requiredRoles: ['admin', 'manager', 'accountant'] },
+    { href: '/settings', icon: Settings, label: 'الإعدادات العامة', requiredRoles: ['admin'] },
+    { href: '/users', icon: Users, label: 'المستخدمين والصلاحيات', requiredRoles: ['admin'] },
+    { href: '/treasury', icon: Banknote, label: 'الخزنة والحسابات', requiredRoles: ['admin', 'manager', 'accountant'] },
 ];
 
 
@@ -92,25 +93,20 @@ export default function DashboardLayout({
 
   React.useEffect(() => {
     setIsClient(true);
-    // Optional: Redirect if not authenticated on client-side load (belt-and-suspenders)
-    if (!isAuthenticated) {
-      // This might cause a flash if middleware is slow, but ensures redirection
-      // router.replace('/login');
-    }
-  }, [isAuthenticated, router]); // Depend on isAuthenticated
+  }, []);
 
   React.useEffect(() => {
     if (isClient) {
        const count = getItemCount();
        setCartItemCount(count);
     }
-  }, [isClient, getItemCount, pathname]);
+  }, [isClient, getItemCount, pathname]); // Update count when cart or pathname changes
 
    const handleLogout = () => {
     logout(); // Clear auth state
     // --- IMPORTANT: Clear any server-side session/token cookie ---
      document.cookie = 'auth-token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax'; // Example cookie removal
-    router.replace('/login'); // Redirect to login page
+    router.replace('/'); // Redirect to login page
   };
 
   // Filter nav items based on user role
@@ -180,7 +176,8 @@ export default function DashboardLayout({
                           className="absolute top-1 left-1 h-5 w-5 p-0 flex items-center justify-center rounded-full text-xs group-data-[state=expanded]:group-data-[collapsible=icon]:block group-data-[state=collapsed]:group-data-[collapsible=icon]:hidden"
                            style={{ lineHeight: '1' }}
                         >
-                          {cartItemCount}
+                          {/* Show number of lines in cart, not total quantity */}
+                          {filteredMainNavItems.length}
                         </Badge>
                       )}
                     </Link>

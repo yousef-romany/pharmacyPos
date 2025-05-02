@@ -24,6 +24,13 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox'; // Import Checkbox
 
+// Helper function to safely parse floats (can be moved to utils)
+const safeParseFloat = (value: string | number | null | undefined, defaultValue = 0): number => {
+    if (value === null || value === undefined) return defaultValue;
+    const parsed = parseFloat(value.toString());
+    return isNaN(parsed) ? defaultValue : parsed;
+};
+
 export default function InventoryReportPage() {
   const [inventory, setInventory] = React.useState<InventoryReportItem[]>([]);
   const [filteredInventory, setFilteredInventory] = React.useState<InventoryReportItem[]>([]);
@@ -61,7 +68,7 @@ export default function InventoryReportPage() {
         const lowerSearchTerm = searchTerm.toLowerCase();
         results = results.filter(item =>
           item.nameAr.toLowerCase().includes(lowerSearchTerm) ||
-          item.nameEn.toLowerCase().includes(lowerSearchTerm) ||
+          (item.nameEn && item.nameEn.toLowerCase().includes(lowerSearchTerm)) || // Check if nameEn exists
           (item.barcode && item.barcode.toLowerCase().includes(lowerSearchTerm)) ||
           item.id.toLowerCase().includes(lowerSearchTerm)
         );
@@ -85,7 +92,7 @@ export default function InventoryReportPage() {
 
     // Filter by Low Stock (TODO: Needs Product.minStockLevel to be reliable)
     // if (showLowStock) {
-    //     results = results.filter(item => item.minStockLevel !== undefined && item.quantity <= item.minStockLevel);
+    //     results = results.filter(item => item.minStockLevel !== undefined && safeParseFloat(item.quantity) <= item.minStockLevel);
     // }
 
 
@@ -237,6 +244,10 @@ export default function InventoryReportPage() {
                      const isExpired = daysLeft !== null && daysLeft < 0;
                      const isExpiringSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 60;
                      const expiryColorClass = isExpired ? 'text-red-700 font-bold' : isExpiringSoon ? 'text-orange-600 font-medium' : '';
+                     const quantityNum = safeParseFloat(item.quantity);
+                     const priceNum = safeParseFloat(item.price);
+                     const costNum = safeParseFloat(item.lastPurchaseCost, 0);
+
                      return (
                          <TableRow key={item.id}>
                              <TableCell className="font-medium">
@@ -244,10 +255,10 @@ export default function InventoryReportPage() {
                                 <div className="text-xs text-muted-foreground">{item.nameEn}</div>
                              </TableCell>
                              <TableCell>{item.barcode || '-'}</TableCell>
-                             <TableCell>{Number.isInteger(item.quantity) ? item.quantity : item.quantity.toFixed(2)}</TableCell>
+                             <TableCell>{Number.isInteger(quantityNum) ? quantityNum : quantityNum.toFixed(2)}</TableCell>
                              <TableCell>{item.unitType}</TableCell>
-                             <TableCell>{(item.lastPurchaseCost ?? 0).toFixed(2)}</TableCell>
-                             <TableCell>{item.price.toFixed(2)}</TableCell>
+                             <TableCell>{costNum.toFixed(2)}</TableCell>
+                             <TableCell>{priceNum.toFixed(2)}</TableCell>
                              <TableCell className={cn(expiryColorClass)}>
                                 {item.expiryDate ? format(new Date(item.expiryDate), 'dd/MM/yyyy', { locale: arSA }) : '-'}
                                 {isExpired && <span className="text-xs block">(منتهي)</span>}
@@ -273,3 +284,4 @@ export default function InventoryReportPage() {
     </div>
   );
 }
+

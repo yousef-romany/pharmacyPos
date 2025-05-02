@@ -12,6 +12,13 @@ import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 
+// Helper function to safely parse floats (can be moved to utils)
+const safeParseFloat = (value: string | number | null | undefined, defaultValue = 0): number => {
+    if (value === null || value === undefined) return defaultValue;
+    const parsed = parseFloat(value.toString());
+    return isNaN(parsed) ? defaultValue : parsed;
+};
+
 export default function DebtsReportPage() {
   const [debtors, setDebtors] = React.useState<Customer[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
@@ -21,8 +28,8 @@ export default function DebtsReportPage() {
       setIsLoading(true);
       try {
         const allCustomers = await getCustomers();
-        const debtorsList = allCustomers.filter(customer => (customer.balance ?? 0) < 0);
-        setDebtors(debtorsList.sort((a, b) => (a.balance ?? 0) - (b.balance ?? 0))); // Sort by most debt first
+        const debtorsList = allCustomers.filter(customer => safeParseFloat(customer.balance) < 0);
+        setDebtors(debtorsList.sort((a, b) => safeParseFloat(a.balance) - safeParseFloat(b.balance))); // Sort by most debt first
       } catch (error) {
         console.error("Failed to fetch customer debt data:", error);
         // Handle error (e.g., show toast)
@@ -34,7 +41,7 @@ export default function DebtsReportPage() {
     fetchDebtors();
   }, []);
 
-  const totalDebt = debtors.reduce((sum, customer) => sum + Math.abs(customer.balance ?? 0), 0);
+  const totalDebt = debtors.reduce((sum, customer) => sum + Math.abs(safeParseFloat(customer.balance)), 0);
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -50,7 +57,16 @@ export default function DebtsReportPage() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <Skeleton className="h-8 w-1/3" />
+             <div className="grid grid-cols-2 gap-4 text-center">
+                 <div>
+                     <p className="text-sm text-muted-foreground">عدد العملاء المدينين</p>
+                     <Skeleton className="h-8 w-16 mx-auto mt-1" />
+                 </div>
+                  <div>
+                     <p className="text-sm text-muted-foreground">إجمالي المديونية</p>
+                     <Skeleton className="h-8 w-24 mx-auto mt-1" />
+                  </div>
+             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4 text-center">
                 <div>
@@ -93,21 +109,24 @@ export default function DebtsReportPage() {
                     </TableRow>
                   ))
                 ) : debtors.length > 0 ? (
-                  debtors.map((customer) => (
-                    <TableRow key={customer.id}>
-                      <TableCell className="font-medium">{customer.name}</TableCell>
-                      <TableCell>{customer.phone || '-'}</TableCell>
-                      <TableCell className={cn("font-semibold", (customer.balance ?? 0) < 0 ? "text-red-600" : "text-muted-foreground")}>
-                        {(customer.balance ?? 0).toFixed(2)} ر.س
-                      </TableCell>
-                      <TableCell>
-                         <Button variant="outline" size="sm" asChild>
-                            <Link href={`/customers?search=${customer.id}`}>عرض</Link>
-                         </Button>
-                         {/* Add action for payment collection later */}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  debtors.map((customer) => {
+                      const balanceNum = safeParseFloat(customer.balance);
+                      return (
+                          <TableRow key={customer.id}>
+                              <TableCell className="font-medium">{customer.name}</TableCell>
+                              <TableCell>{customer.phone || '-'}</TableCell>
+                              <TableCell className={cn("font-semibold", balanceNum < 0 ? "text-red-600" : "text-muted-foreground")}>
+                                  {balanceNum.toFixed(2)} ر.س
+                              </TableCell>
+                              <TableCell>
+                                 <Button variant="outline" size="sm" asChild>
+                                    <Link href={`/customers?search=${customer.id}`}>عرض</Link>
+                                 </Button>
+                                 {/* Add action for payment collection later */}
+                              </TableCell>
+                          </TableRow>
+                      );
+                    })
                 ) : (
                   <TableRow>
                     <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
@@ -124,3 +143,4 @@ export default function DebtsReportPage() {
     </div>
   );
 }
+

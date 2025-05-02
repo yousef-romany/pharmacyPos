@@ -44,10 +44,11 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'; // Import Select
 import { useToast } from '@/hooks/use-toast';
-import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity, Barcode, Boxes, Percent, Calendar, AlertCircle, BadgePercent, Building, Beaker, FlaskConical } from 'lucide-react'; // Added FlaskConical for active ingredient
-import type { Product } from '@/lib/types';
-import { getProducts, addProduct, updateProduct, deleteProduct, calculateDaysUntilExpiry } from '@/lib/data'; // Import CRUD functions and expiry helper
+import { PlusCircle, Edit, Trash2, Package, Pill, Baby, SprayCan, Activity, Barcode, Boxes, Percent, Calendar, AlertCircle, BadgePercent, Building, Beaker, FlaskConical, Warehouse as WarehouseIcon } from 'lucide-react'; // Added FlaskConical for active ingredient, WarehouseIcon
+import type { Product, Warehouse } from '@/lib/types'; // Import Warehouse type
+import { getProducts, addProduct, updateProduct, deleteProduct, calculateDaysUntilExpiry, getWarehouses } from '@/lib/data'; // Import CRUD functions, expiry helper, getWarehouses
 import { DatePicker } from '@/components/ui/date-picker'; // Import DatePicker
 import { format } from 'date-fns'; // Import format function
 import { arSA } from 'date-fns/locale'; // Import Arabic locale
@@ -81,25 +82,27 @@ interface ProductFormProps {
   initialData?: Product | null;
   onSubmit: (data: Omit<Product, 'id'> | Product) => Promise<void>;
   onClose: () => void;
+  warehouses: Warehouse[]; // Add warehouses prop
 }
 
-function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
+function ProductForm({ initialData, onSubmit, onClose, warehouses }: ProductFormProps) {
   const [formData, setFormData] = React.useState<Omit<Product, 'id' | 'categoryIcon'> & { categoryIconName?: string }>({
     nameAr: initialData?.nameAr || '',
     nameEn: initialData?.nameEn || '',
-    manufacturer: initialData?.manufacturer || '', // Added
-    concentration: initialData?.concentration || '', // Added
-    activeIngredient: initialData?.activeIngredient || '', // Added
-    price: initialData?.price || 0,
-    quantity: initialData?.quantity || 0,
+    manufacturer: initialData?.manufacturer || '',
+    concentration: initialData?.concentration || '',
+    activeIngredient: initialData?.activeIngredient || '',
+    price: initialData?.price || '0', // Keep as string initially
+    quantity: initialData?.quantity || '0', // Keep as string initially
     barcode: initialData?.barcode || '',
     categoryIconName: getIconName(initialData?.categoryIcon) || 'Pill',
     unitType: initialData?.unitType || 'قطعة',
     subUnitType: initialData?.subUnitType || '',
     subUnitsPerUnit: initialData?.subUnitsPerUnit || undefined,
-    discountRate: initialData?.discountRate || undefined, // Initialize discountRate
-    expiryDate: initialData?.expiryDate ? new Date(initialData.expiryDate) : undefined, // Initialize expiryDate
-    minStockLevel: initialData?.minStockLevel || undefined, // Initialize minStockLevel
+    discountRate: initialData?.discountRate || undefined,
+    expiryDate: initialData?.expiryDate ? new Date(initialData.expiryDate) : undefined,
+    minStockLevel: initialData?.minStockLevel || undefined,
+    warehouseId: initialData?.warehouseId || '', // Initialize warehouseId
   });
   const [isLoading, setIsLoading] = React.useState(false);
    const { toast } = useToast(); // Moved toast hook here
@@ -108,14 +111,16 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-       [name]: name === 'price' ? parseFloat(value) || 0
-             : name === 'quantity' ? parseFloat(value) || 0 // Allow float for quantity
-             : name === 'subUnitsPerUnit' ? parseInt(value) || undefined
-             : name === 'discountRate' ? parseFloat(value) || undefined // Parse discount
-             : name === 'minStockLevel' ? parseInt(value) || undefined // Parse min stock
-             : value,
+       [name]: value, // Keep values as strings for input fields
     }));
   };
+
+    const handleSelectChange = (name: keyof typeof formData, value: string) => {
+        setFormData((prev) => ({
+            ...prev,
+            [name]: value,
+        }));
+    };
 
    const handleDateChange = (date: Date | undefined) => {
      setFormData((prev) => ({ ...prev, expiryDate: date }));
@@ -129,24 +134,34 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
       const categoryIcon = getIconComponent(formData.categoryIconName);
 
        // Basic validation before submitting
-       if (formData.discountRate !== undefined && (formData.discountRate < 0 || formData.discountRate > 100)) {
+       const discountRateNum = parseFloat(formData.discountRate || '0');
+       const minStockLevelNum = parseInt(formData.minStockLevel?.toString() || '-1');
+       const subUnitsNum = parseInt(formData.subUnitsPerUnit?.toString() || '0');
+
+       if (formData.discountRate !== undefined && (discountRateNum < 0 || discountRateNum > 100)) {
          toast({ title: "خطأ", description: "نسبة الخصم يجب أن تكون بين 0 و 100.", variant: "destructive" });
          setIsLoading(false);
          return;
        }
-       if (formData.minStockLevel !== undefined && formData.minStockLevel < 0) {
+       if (formData.minStockLevel !== undefined && minStockLevelNum < 0) {
          toast({ title: "خطأ", description: "الحد الأدنى للمخزون لا يمكن أن يكون سالباً.", variant: "destructive" });
          setIsLoading(false);
          return;
        }
-       if (formData.subUnitsPerUnit !== undefined && formData.subUnitsPerUnit <= 0) {
-          formData.subUnitType = ''; // Clear sub-unit type if count is invalid/missing
-          formData.subUnitsPerUnit = undefined;
-       } else if (formData.subUnitsPerUnit && !formData.subUnitType) {
-            toast({ title: "خطأ", description: "يجب إدخال اسم الوحدة الفرعية عند تحديد عددها.", variant: "destructive" });
+       if (subUnitsNum > 0 && !formData.subUnitType?.trim()) {
+           toast({ title: "خطأ", description: "يجب إدخال اسم الوحدة الفرعية عند تحديد عددها.", variant: "destructive" });
+           setIsLoading(false);
+           return;
+       } else if (subUnitsNum <= 0) {
+           formData.subUnitType = ''; // Clear sub-unit type if count is invalid/missing
+           formData.subUnitsPerUnit = undefined;
+       }
+        // Validate warehouse selection
+        if (!formData.warehouseId) {
+            toast({ title: "خطأ", description: "يجب اختيار المخزن.", variant: "destructive" });
             setIsLoading(false);
             return;
-       }
+        }
 
 
         // Remove the temporary categoryIconName
@@ -217,6 +232,26 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
                     <option key={name} value={name}>{label}</option>
                 ))}
              </select>
+          </div>
+          {/* Warehouse Selection */}
+          <div>
+              <Label htmlFor="warehouseId">المخزن <span className="text-destructive">*</span></Label>
+              <Select
+                  value={formData.warehouseId || ''}
+                  onValueChange={(value) => handleSelectChange('warehouseId', value)}
+                  required
+              >
+                  <SelectTrigger id="warehouseId" className="mt-1">
+                      <SelectValue placeholder="اختر المخزن..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                      {warehouses.map((wh) => (
+                          <SelectItem key={wh.id} value={wh.id}>
+                              {wh.name} {wh.isDefault ? '(افتراضي)' : ''}
+                          </SelectItem>
+                      ))}
+                  </SelectContent>
+              </Select>
           </div>
       </div>
 
@@ -289,38 +324,52 @@ function ProductForm({ initialData, onSubmit, onClose }: ProductFormProps) {
 // --- Products Table ---
 export default function ProductsPage() {
   const [products, setProducts] = React.useState<Product[]>([]);
+  const [warehouses, setWarehouses] = React.useState<Warehouse[]>([]); // State for warehouses
+  const [warehouseMap, setWarehouseMap] = React.useState<Map<string, string>>(new Map()); // Map warehouse ID to name
   const [isLoading, setIsLoading] = React.useState(true);
+  const [isLoadingWarehouses, setIsLoadingWarehouses] = React.useState(true);
   const [isFormOpen, setIsFormOpen] = React.useState(false);
   const [editingProduct, setEditingProduct] = React.useState<Product | null>(null);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>([]);
   const { toast } = useToast();
 
-  const fetchProducts = React.useCallback(async () => {
+  const fetchProductsAndWarehouses = React.useCallback(async () => {
     setIsLoading(true);
+    setIsLoadingWarehouses(true);
     try {
-      const data = await getProducts();
-      setProducts(data);
+        const [productData, warehouseData] = await Promise.all([
+            getProducts(),
+            getWarehouses()
+        ]);
+      setProducts(productData);
+      setWarehouses(warehouseData);
+
+      const wMap = new Map<string, string>();
+      warehouseData.forEach(w => wMap.set(w.id, w.name));
+      setWarehouseMap(wMap);
+
     } catch (error) {
-      console.error("Failed to fetch products:", error);
-      toast({ title: "خطأ", description: "فشل تحميل قائمة المنتجات.", variant: "destructive" });
+      console.error("Failed to fetch products or warehouses:", error);
+      toast({ title: "خطأ", description: "فشل تحميل البيانات الأولية.", variant: "destructive" });
     } finally {
       setIsLoading(false);
+      setIsLoadingWarehouses(false);
     }
   }, [toast]);
 
   React.useEffect(() => {
-    fetchProducts();
-  }, [fetchProducts]);
+    fetchProductsAndWarehouses();
+  }, [fetchProductsAndWarehouses]);
 
   const handleAddProduct = async (productData: Omit<Product, 'id'>) => {
     try {
       await addProduct(productData);
       toast({ title: "نجاح", description: "تمت إضافة المنتج بنجاح." });
-      fetchProducts(); // Refresh list
+      fetchProductsAndWarehouses(); // Refresh list
     } catch (error) {
       console.error("Failed to add product:", error);
-      toast({ title: "خطأ", description: "فشلت إضافة المنتج.", variant: "destructive" });
+      toast({ title: "خطأ", description: `فشلت إضافة المنتج: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
     }
   };
 
@@ -330,10 +379,10 @@ export default function ProductsPage() {
       await updateProduct(productData.id, productData);
       toast({ title: "نجاح", description: "تم تحديث المنتج بنجاح." });
        setEditingProduct(null); // Clear editing state
-      fetchProducts(); // Refresh list
+      fetchProductsAndWarehouses(); // Refresh list
     } catch (error) {
       console.error("Failed to update product:", error);
-      toast({ title: "خطأ", description: "فشل تحديث المنتج.", variant: "destructive" });
+      toast({ title: "خطأ", description: `فشل تحديث المنتج: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
     }
   };
 
@@ -342,13 +391,13 @@ export default function ProductsPage() {
       const success = await deleteProduct(productId);
       if (success) {
         toast({ title: "نجاح", description: "تم حذف المنتج بنجاح.", variant: "destructive" });
-        fetchProducts(); // Refresh list
+        fetchProductsAndWarehouses(); // Refresh list
       } else {
           throw new Error("Delete operation returned false");
       }
     } catch (error) {
       console.error("Failed to delete product:", error);
-      toast({ title: "خطأ", description: "فشل حذف المنتج.", variant: "destructive" });
+      toast({ title: "خطأ", description: `فشل حذف المنتج: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
     }
   };
 
@@ -416,8 +465,8 @@ export default function ProductsPage() {
       header: "السعر",
        cell: ({ row }) => (
            <div className="flex items-center gap-1">
-               <span>{row.original.price.toFixed(2)}</span>
-                {row.original.discountRate && row.original.discountRate > 0 && (
+               <span>{parseFloat(row.original.price || '0').toFixed(2)}</span>
+                {row.original.discountRate && parseFloat(row.original.discountRate) > 0 && (
                     <span className="text-xs text-red-600 font-medium">(-{row.original.discountRate}%)</span>
                 )}
            </div>
@@ -428,7 +477,7 @@ export default function ProductsPage() {
       accessorKey: "quantity",
       header: "الكمية",
        cell: ({ row }) => {
-            const qty = row.original.quantity;
+            const qty = parseFloat(row.original.quantity || '0');
             const minStock = row.original.minStockLevel;
             const isLowStock = minStock !== undefined && qty <= minStock;
             return (
@@ -442,6 +491,15 @@ export default function ProductsPage() {
         },
       size: 90,
     },
+    {
+        accessorKey: "warehouseId", // Add warehouse column
+        header: "المخزن",
+        cell: ({ row }) => warehouseMap.get(row.original.warehouseId || '') || '-',
+        size: 120,
+        filterFn: (row, id, value) => { // Filter function for warehouse
+             return value.includes(row.getValue(id));
+        },
+     },
     {
       accessorKey: "expiryDate",
       header: "انتهاء الصلاحية",
@@ -575,6 +633,24 @@ export default function ProductsPage() {
                     }
                     className="max-w-xs" // Shorter width for barcode search
                  />
+                  {/* Warehouse Filter */}
+                  <Select
+                      value={(table.getColumn("warehouseId")?.getFilterValue() as string) ?? "all"}
+                      onValueChange={(value) => table.getColumn("warehouseId")?.setFilterValue(value === "all" ? "" : value)}
+                      disabled={isLoadingWarehouses}
+                  >
+                      <SelectTrigger className="w-[180px]">
+                          <SelectValue placeholder="فلتر حسب المخزن" />
+                      </SelectTrigger>
+                      <SelectContent>
+                          <SelectItem value="all">جميع المخازن</SelectItem>
+                          {warehouses.map((wh) => (
+                              <SelectItem key={wh.id} value={wh.id}>
+                                  {wh.name}
+                              </SelectItem>
+                          ))}
+                      </SelectContent>
+                  </Select>
              </div>
 
               <div className="rounded-md border">
@@ -661,6 +737,7 @@ export default function ProductsPage() {
                     initialData={editingProduct}
                     onSubmit={editingProduct ? handleUpdateProduct : handleAddProduct}
                     onClose={handleCloseForm}
+                    warehouses={warehouses} // Pass warehouses to the form
                 />
             </DialogContent>
         </Dialog>

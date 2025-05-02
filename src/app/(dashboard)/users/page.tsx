@@ -65,14 +65,15 @@ const roleColors: Record<UserRole, string> = {
   admin: 'bg-red-600 hover:bg-red-700',
   manager: 'bg-blue-600 hover:bg-blue-700',
   seller: 'bg-green-600 hover:bg-green-700',
-  accountant: 'bg-purple-600 hover:bg-purple-700',
+  accountant: 'bg-purple-600 hover:bg-purple-600',
 };
 
 
 // --- User Form ---
 interface UserFormProps {
   initialData?: User | null;
-  onSubmit: (data: Omit<User, 'id'> | User) => Promise<void>;
+  // onSubmit type now includes optional password
+  onSubmit: (data: (Omit<User, 'id'> | User) & { password?: string }) => Promise<void>;
   onClose: () => void;
 }
 
@@ -81,8 +82,11 @@ function UserForm({ initialData, onSubmit, onClose }: UserFormProps) {
     name: initialData?.name || '',
     email: initialData?.email || '',
     role: initialData?.role || 'seller', // Default role
+    passwordHash: initialData?.passwordHash || '', // Include passwordHash for display/editing context if needed
   });
+  const [password, setPassword] = React.useState(''); // Separate state for password
   const [isLoading, setIsLoading] = React.useState(false);
+  const { toast } = useToast();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -93,18 +97,31 @@ function UserForm({ initialData, onSubmit, onClose }: UserFormProps) {
         setFormData((prev) => ({ ...prev, role: value }));
    };
 
+   const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+       setPassword(e.target.value);
+   };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
      try {
-        const userData = initialData ? { ...initialData, ...formData } : formData;
-        // Add password handling here if implementing authentication
-        // Example: if (!initialData || formData.password) { userData.password = hash(formData.password); }
+        // Require password for new users
+        if (!initialData && !password) {
+            toast({ title: "خطأ", description: "كلمة المرور مطلوبة للمستخدم الجديد.", variant: "destructive" });
+            setIsLoading(false);
+            return;
+        }
+
+        // Combine form data and password for submission
+        const userData = initialData
+           ? { ...initialData, ...formData, ...(password && { password }) } // Include password only if set for update
+           : { ...formData, password }; // Password is required for add
+
         await onSubmit(userData);
         onClose(); // Close dialog on success
      } catch (error) {
         console.error("Form submission error:", error);
-        // Optionally show error toast
+         toast({ title: "خطأ", description: "فشل حفظ بيانات المستخدم.", variant: "destructive" });
      } finally {
          setIsLoading(false);
      }
@@ -113,15 +130,15 @@ function UserForm({ initialData, onSubmit, onClose }: UserFormProps) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <Label htmlFor="name">اسم المستخدم</Label>
+        <Label htmlFor="name">اسم المستخدم <span className="text-destructive">*</span></Label>
         <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
       </div>
       <div>
-        <Label htmlFor="email">البريد الإلكتروني</Label>
+        <Label htmlFor="email">البريد الإلكتروني <span className="text-destructive">*</span></Label>
         <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} required />
       </div>
        <div>
-            <Label htmlFor="role">الدور/الصلاحية</Label>
+            <Label htmlFor="role">الدور/الصلاحية <span className="text-destructive">*</span></Label>
             <Select onValueChange={handleRoleChange} defaultValue={formData.role} value={formData.role}>
                  <SelectTrigger id="role">
                     <SelectValue placeholder="اختر الدور..." />
@@ -135,11 +152,22 @@ function UserForm({ initialData, onSubmit, onClose }: UserFormProps) {
                  </SelectContent>
              </Select>
        </div>
-       {/* Add password field if needed */}
-       {/* <div>
-         <Label htmlFor="password">{initialData ? 'كلمة مرور جديدة (اختياري)' : 'كلمة المرور'}</Label>
-         <Input id="password" name="password" type="password" onChange={handleChange} required={!initialData} />
-       </div> */}
+       {/* Password Field */}
+       <div>
+         <Label htmlFor="password">
+           {initialData ? 'كلمة مرور جديدة (اتركه فارغاً لعدم التغيير)' : 'كلمة المرور'}
+           {!initialData && <span className="text-destructive">*</span>}
+          </Label>
+         <Input
+            id="password"
+            name="password"
+            type="password"
+            value={password}
+            onChange={handlePasswordChange}
+            required={!initialData} // Required only when adding
+            placeholder="********"
+            />
+       </div>
       <DialogFooter>
          <DialogClose asChild>
             <Button type="button" variant="outline" onClick={onClose}>إلغاء</Button>
@@ -180,27 +208,36 @@ export default function UsersPage() {
     fetchUsers();
   }, [fetchUsers]);
 
-  const handleAddUser = async (userData: Omit<User, 'id'>) => {
+  // Updated to accept password
+  const handleAddUser = async (userData: Omit<User, 'id'> & { password?: string }) => {
      try {
       await addUser(userData);
       toast({ title: "نجاح", description: "تمت إضافة المستخدم بنجاح." });
+      setIsFormOpen(false); // Close form on success
       fetchUsers(); // Refresh list
     } catch (error) {
        console.error("Failed to add user:", error);
-       toast({ title: "خطأ", description: "فشلت إضافة المستخدم.", variant: "destructive" });
+       toast({ title: "خطأ", description: `فشلت إضافة المستخدم: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
     }
   };
 
-  const handleUpdateUser = async (userData: User) => {
+  // Updated to accept password
+  const handleUpdateUser = async (userData: User & { password?: string }) => {
     if (!userData.id) return;
      try {
-        await updateUser(userData.id, userData);
+        // Remove password from userData if it's empty or undefined before sending
+        const updatePayload = { ...userData };
+        if (!updatePayload.password) {
+            delete updatePayload.password;
+        }
+        await updateUser(userData.id, updatePayload);
         toast({ title: "نجاح", description: "تم تحديث المستخدم بنجاح." });
         setEditingUser(null);
+        setIsFormOpen(false); // Close form on success
         fetchUsers(); // Refresh list
      } catch (error) {
          console.error("Failed to update user:", error);
-         toast({ title: "خطأ", description: "فشل تحديث المستخدم.", variant: "destructive" });
+         toast({ title: "خطأ", description: `فشل تحديث المستخدم: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
      }
   };
 
@@ -211,11 +248,11 @@ export default function UsersPage() {
             toast({ title: "نجاح", description: "تم حذف المستخدم بنجاح.", variant: "destructive" });
             fetchUsers(); // Refresh list
         } else {
-             throw new Error("Delete operation returned false");
+             throw new Error("Delete operation returned false or affected 0 rows");
         }
      } catch (error) {
          console.error("Failed to delete user:", error);
-         toast({ title: "خطأ", description: "فشل حذف المستخدم.", variant: "destructive" });
+         toast({ title: "خطأ", description: `فشل حذف المستخدم: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
      }
   };
 
@@ -243,12 +280,22 @@ export default function UsersPage() {
          },
     },
     {
+        accessorKey: "passwordHash", // Accessor for the password hash
+        header: "كلمة المرور (مشفر)", // Header for the password column
+         cell: ({ row }) => {
+             // Mask the password or show a limited part for security
+             const hash = row.original.passwordHash;
+             return hash ? `${hash.substring(0, 8)}...` : 'غير متوفر'; // Show first few characters or indicate if missing
+         },
+         size: 150, // Adjust size as needed
+    },
+    {
       id: "actions",
       header: "إجراءات",
       cell: ({ row }) => (
         <div className="flex justify-end space-x-1 space-x-reverse">
            <DialogTrigger asChild>
-             <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setEditingUser(row.original)}>
+             <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => { setEditingUser(row.original); setIsFormOpen(true); }}>
                 <Edit className="h-4 w-4" />
              </Button>
            </DialogTrigger>
@@ -334,7 +381,7 @@ export default function UsersPage() {
                  />
                   {/* Role Filter Dropdown */}
                   <Select
-                      value={(table.getColumn("role")?.getFilterValue() as string) ?? ""}
+                      value={(table.getColumn("role")?.getFilterValue() as string) ?? "all"} // Default to "all" if no filter
                       onValueChange={(value) => table.getColumn("role")?.setFilterValue(value === "all" ? "" : value)}
                    >
                        <SelectTrigger className="w-[180px]">
@@ -358,8 +405,9 @@ export default function UsersPage() {
                       <TableRow key={headerGroup.id}>
                         {headerGroup.headers.map((header) => (
                           <TableHead key={header.id}
+                             style={{ width: header.getSize() !== 150 ? `${header.getSize()}px` : undefined }} // Apply size if not default
                              onClick={header.column.getToggleSortingHandler()}
-                             className={cn(header.column.getCanSort() ? 'cursor-pointer select-none' : '', 'whitespace-nowrap')}
+                             className={cn("text-center", header.column.getCanSort() ? 'cursor-pointer select-none' : '', 'whitespace-nowrap')}
                           >
                             {header.isPlaceholder ? null : flexRender( header.column.columnDef.header, header.getContext() )}
                             {header.column.getCanSort() && { asc: ' 🔼', desc: ' 🔽' }[header.column.getIsSorted() as string]}
@@ -383,7 +431,7 @@ export default function UsersPage() {
                           data-state={row.getIsSelected() && "selected"}
                         >
                           {row.getVisibleCells().map((cell) => (
-                            <TableCell key={cell.id}>
+                             <TableCell className="text-center" key={cell.id} style={{ width: cell.column.getSize() !== 150 ? `${cell.column.getSize()}px` : undefined }}> {/* Apply size if not default */}
                               {flexRender(cell.column.columnDef.cell, cell.getContext())}
                             </TableCell>
                           ))}

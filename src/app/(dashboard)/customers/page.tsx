@@ -392,7 +392,7 @@ export default function CustomersPage() {
                           <TableHead key={header.id}
                              style={{ width: header.getSize() !== 150 ? `${header.getSize()}px` : undefined }}
                              onClick={header.column.getToggleSortingHandler()}
-                             className={cn(header.column.getCanSort() ? 'cursor-pointer select-none' : '', 'whitespace-nowrap')} // Add whitespace-nowrap
+                             className={cn("text-center",header.column.getCanSort() ? 'cursor-pointer select-none' : '', 'whitespace-nowrap')} // Add whitespace-nowrap
                             >
                             {header.isPlaceholder
                               ? null
@@ -423,7 +423,7 @@ export default function CustomersPage() {
                           data-state={row.getIsSelected() && "selected"}
                         >
                           {row.getVisibleCells().map((cell) => (
-                            <TableCell key={cell.id} style={{ width: cell.column.getSize() !== 150 ? `${cell.column.getSize()}px` : undefined }}>
+                            <TableCell className='text-center' key={cell.id} style={{ width: cell.column.getSize() !== 150 ? `${cell.column.getSize()}px` : undefined }}>
                               {flexRender(cell.column.columnDef.cell, cell.getContext())}
                             </TableCell>
                           ))}

@@ -12,6 +12,14 @@ import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Label } from '@/components/ui/label';
 import { startOfMonth, endOfMonth, startOfDay, endOfDay, format } from 'date-fns'; // Import format
+import { arSA } from 'date-fns/locale'; // Import Arabic locale
+
+// Helper function to safely parse floats (can be moved to utils)
+const safeParseFloat = (value: string | number | null | undefined, defaultValue = 0): number => {
+    if (value === null || value === undefined) return defaultValue;
+    const parsed = parseFloat(value.toString());
+    return isNaN(parsed) ? defaultValue : parsed;
+};
 
 export default function ProfitLossReportPage() {
   const [isLoading, setIsLoading] = React.useState(true);
@@ -43,25 +51,27 @@ export default function ProfitLossReportPage() {
 
       // Use Promise.all for potentially fetching product details concurrently (though sample data is fast)
       await Promise.all(filteredSales.map(async (sale) => {
-        calculatedTotalSales += sale.totalAmount;
+        calculatedTotalSales += safeParseFloat(sale.totalAmount); // Parse totalAmount
         // Calculate COGS for this sale
         for (const item of sale.items) {
+           const itemQuantityNum = safeParseFloat(item.quantity); // Parse quantity
            // If costAtSale is stored, use it directly
           if (item.costAtSale !== undefined && item.costAtSale !== null) {
-            calculatedTotalCOGS += item.costAtSale * item.quantity;
+            calculatedTotalCOGS += safeParseFloat(item.costAtSale) * itemQuantityNum; // Parse costAtSale
           } else {
              // Fallback: Fetch product cost if not stored on the sale item
             const product = await getProductById(item.productId);
              // Cost needs to be per *sold unit*
              let costPerSoldUnit = 0;
              if (product && product.lastPurchaseCost !== undefined) {
+                 const lastPurchaseCostNum = safeParseFloat(product.lastPurchaseCost); // Parse cost
                  costPerSoldUnit = item.soldUnitType === 'sub' && product.subUnitsPerUnit
-                     ? product.lastPurchaseCost / product.subUnitsPerUnit
-                     : product.lastPurchaseCost;
+                     ? lastPurchaseCostNum / product.subUnitsPerUnit
+                     : lastPurchaseCostNum;
              }
              // else: handle missing product or cost (e.g., log warning, assume 0 cost)
 
-            calculatedTotalCOGS += costPerSoldUnit * item.quantity;
+            calculatedTotalCOGS += costPerSoldUnit * itemQuantityNum;
           }
         }
       }));
@@ -144,7 +154,7 @@ export default function ProfitLossReportPage() {
         <CardHeader>
           <CardTitle>ملخص الأرباح والخسائر</CardTitle>
            <CardDescription>
-             الأداء المالي للفترة من {dateFrom ? format(dateFrom, 'dd/MM/yyyy') : 'البداية'} إلى {dateTo ? format(dateTo, 'dd/MM/yyyy') : 'النهاية'}.
+             الأداء المالي للفترة من {dateFrom ? format(dateFrom, 'dd/MM/yyyy', { locale: arSA }) : 'البداية'} إلى {dateTo ? format(dateTo, 'dd/MM/yyyy', { locale: arSA }) : 'النهاية'}.
            </CardDescription>
         </CardHeader>
         <CardContent>
@@ -199,3 +209,4 @@ export default function ProfitLossReportPage() {
     </div>
   );
 }
+

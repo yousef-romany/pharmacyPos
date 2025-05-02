@@ -303,7 +303,7 @@ export default function SuppliersPage() {
                         {headerGroup.headers.map((header) => (
                           <TableHead key={header.id}
                              onClick={header.column.getToggleSortingHandler()}
-                             className={header.column.getCanSort() ? 'cursor-pointer select-none' : ''}>
+                             className={header.column.getCanSort() ? 'cursor-pointer select-none text-center' : 'text-center'}>
                             {header.isPlaceholder
                               ? null
                               : flexRender(
@@ -331,9 +331,10 @@ export default function SuppliersPage() {
                         <TableRow
                           key={row.id}
                           data-state={row.getIsSelected() && "selected"}
+                          
                         >
                           {row.getVisibleCells().map((cell) => (
-                            <TableCell key={cell.id}>
+                            <TableCell key={cell.id} className='text-center'>
                               {flexRender(cell.column.columnDef.cell, cell.getContext())}
                             </TableCell>
                           ))}

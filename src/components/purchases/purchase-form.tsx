@@ -11,10 +11,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DatePicker } from '@/components/ui/date-picker'; // Assuming you have a DatePicker component
-import { Trash2, Plus, Search, Loader2, Calendar as CalendarIcon } from 'lucide-react'; // Added CalendarIcon
+import { Trash2, Plus, Search, Loader2, Calendar as CalendarIcon, Warehouse as WarehouseIcon } from 'lucide-react'; // Added CalendarIcon, WarehouseIcon
 import { useToast } from '@/hooks/use-toast';
-import type { PurchaseTransaction, PurchaseTransactionItem, Product, Supplier, PaymentStatus } from '@/lib/types';
-import { getProducts, getProductById } from '@/lib/data'; // Import product fetching functions
+import type { PurchaseTransaction, PurchaseTransactionItem, Product, Supplier, PaymentStatus, Warehouse } from '@/lib/types'; // Import Warehouse type
+import { getProducts, getProductById, getWarehouses, getDefaultWarehouseId } from '@/lib/data'; // Import product fetching functions, getWarehouses
 import { Separator } from '@/components/ui/separator'; // Import Separator
 
 // --- Zod Schema for Validation ---
@@ -24,6 +24,7 @@ const purchaseItemSchema = z.object({
   quantity: z.number().min(0.01, "الكمية يجب أن تكون أكبر من 0"),
   cost: z.number().min(0, "التكلفة لا يمكن أن تكون سالبة"),
   expiryDate: z.date().optional(), // Optional expiry date for the batch
+  warehouseId: z.string().min(1, "يجب اختيار مخزن الوجهة"), // Add warehouseId validation
 });
 
 const purchaseFormSchema = z.object({
@@ -31,6 +32,7 @@ const purchaseFormSchema = z.object({
   date: z.date({ required_error: "تاريخ الفاتورة مطلوب" }),
   invoiceNumber: z.string().optional(), // Supplier's invoice number
   amountPaid: z.number().min(0, "المبلغ المدفوع لا يمكن أن يكون سالباً").optional().default(0), // Amount paid to supplier
+  destinationWarehouseId: z.string().optional(), // Optional: Overall destination warehouse for the whole purchase
   items: z.array(purchaseItemSchema).min(1, "يجب إضافة منتج واحد على الأقل"),
 });
 
@@ -39,16 +41,33 @@ type PurchaseFormValues = z.infer<typeof purchaseFormSchema>;
 // --- Component Props ---
 interface PurchaseFormProps {
   suppliers: Supplier[];
+  warehouses: Warehouse[]; // Add warehouses prop
   onSubmit: (data: Omit<PurchaseTransaction, 'id' | 'totalAmount' | 'paymentStatus'>) => Promise<void>; // Adjusted onSubmit type
   onClose: () => void;
 }
 
-export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps) {
+export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: PurchaseFormProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
   const [productSearchTerm, setProductSearchTerm] = React.useState('');
   const [searchResults, setSearchResults] = React.useState<Product[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
+  const [defaultWarehouseId, setDefaultWarehouseId] = React.useState<string | undefined>(undefined);
+
+   // Fetch default warehouse ID on mount
+   React.useEffect(() => {
+     const fetchDefaultWarehouse = async () => {
+         try {
+             const id = await getDefaultWarehouseId();
+             setDefaultWarehouseId(id);
+         } catch (error) {
+              console.error("Failed to fetch default warehouse ID:", error);
+              // Handle error if necessary
+         }
+     };
+     fetchDefaultWarehouse();
+   }, []);
+
 
   const form = useForm<PurchaseFormValues>({
     resolver: zodResolver(purchaseFormSchema),
@@ -57,6 +76,7 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
       date: new Date(),
       invoiceNumber: '',
       amountPaid: 0,
+      destinationWarehouseId: '', // Initialize overall warehouse
       items: [],
     },
   });
@@ -65,6 +85,14 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
     control: form.control,
     name: 'items',
   });
+
+   // Update default destination warehouse for the form when fetched
+   React.useEffect(() => {
+      if (defaultWarehouseId && !form.getValues('destinationWarehouseId')) {
+          form.setValue('destinationWarehouseId', defaultWarehouseId);
+      }
+   }, [defaultWarehouseId, form]);
+
 
   // --- Product Search Logic ---
   React.useEffect(() => {
@@ -101,7 +129,7 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
   }, [productSearchTerm, toast]);
 
   const handleAddProduct = (product: Product) => {
-    // Check if product already exists in the form items
+    // Check if product already exists in the form items (consider warehouse later if needed)
     const exists = fields.some(item => item.productId === product.id);
     if (exists) {
          toast({ title: "موجود بالفعل", description: `منتج "${product.nameAr}" موجود بالفعل في الفاتورة.`, variant: "default"});
@@ -112,8 +140,9 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
       productId: product.id,
       productName: product.nameAr, // Store name for display
       quantity: 1,
-      cost: 0, // Default cost to 0, user should update
+      cost: parseFloat(product.lastPurchaseCost || '0'), // Use last purchase cost as default if available
       expiryDate: undefined, // Default expiry to undefined
+      warehouseId: form.getValues('destinationWarehouseId') || defaultWarehouseId || '', // Use overall destination or default
     });
     setProductSearchTerm(''); // Clear search after adding
     setSearchResults([]);
@@ -129,11 +158,13 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
         date: data.date,
         invoiceNumber: data.invoiceNumber,
         amountPaid: data.amountPaid ?? 0, // Ensure amountPaid is a number
-        items: data.items.map(({ productId, quantity, cost, expiryDate }) => ({
+        destinationWarehouseId: data.destinationWarehouseId, // Include overall destination
+        items: data.items.map(({ productId, quantity, cost, expiryDate, warehouseId }) => ({ // Include warehouseId per item
             productId,
             quantity,
             cost,
-            expiryDate
+            expiryDate,
+            destinationWarehouseId: warehouseId // Map form field to item property
         })),
       };
       await onSubmit(purchaseData);
@@ -155,8 +186,8 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
 
   return (
     <form onSubmit={form.handleSubmit(processSubmit)} className="space-y-6">
-      {/* Header Section: Supplier, Date, Invoice #, Amount Paid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Header Section: Supplier, Date, Invoice #, Amount Paid, Destination Warehouse */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {/* Supplier Select */}
         <div>
           <Label htmlFor="supplierId">المورد <span className="text-destructive">*</span></Label>
@@ -164,7 +195,7 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
             name="supplierId"
             control={form.control}
             render={({ field }) => (
-              <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value}>
+              <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value || ''}>
                 <SelectTrigger id="supplierId">
                   <SelectValue placeholder="اختر المورد..." />
                 </SelectTrigger>
@@ -230,6 +261,32 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
             />
            {form.formState.errors.amountPaid && <p className="text-xs text-destructive mt-1">{form.formState.errors.amountPaid.message}</p>}
          </div>
+
+         {/* Overall Destination Warehouse */}
+          <div>
+              <Label htmlFor="destinationWarehouseId">مخزن الوجهة (لجميع الأصناف)</Label>
+              <Controller
+                 name="destinationWarehouseId"
+                 control={form.control}
+                 render={({ field }) => (
+                     <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value || ''}>
+                         <SelectTrigger id="destinationWarehouseId">
+                             <SelectValue placeholder="اختر المخزن..." />
+                         </SelectTrigger>
+                         <SelectContent>
+                             {warehouses.map((wh) => (
+                                 <SelectItem key={wh.id} value={wh.id}>
+                                      {wh.name} {wh.isDefault ? '(افتراضي)' : ''}
+                                 </SelectItem>
+                             ))}
+                         </SelectContent>
+                     </Select>
+                 )}
+              />
+               <p className="text-xs text-muted-foreground mt-1">يمكن تغيير المخزن لكل صنف في الجدول أدناه.</p>
+               {form.formState.errors.destinationWarehouseId && <p className="text-xs text-destructive mt-1">{form.formState.errors.destinationWarehouseId.message}</p>}
+          </div>
+
       </div>
 
       <Separator />
@@ -281,10 +338,11 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="w-[30%]">المنتج</TableHead>
+                <TableHead className="w-[25%]">المنتج</TableHead>
                 <TableHead>الكمية</TableHead>
                 <TableHead>تكلفة الوحدة</TableHead>
-                <TableHead>تاريخ الصلاحية</TableHead> {/* Added Expiry Header */}
+                <TableHead>الصلاحية</TableHead>
+                <TableHead>المخزن</TableHead> {/* Added Warehouse Header */}
                 <TableHead>الإجمالي</TableHead>
                 <TableHead className="w-[50px]"> </TableHead>
               </TableRow>
@@ -344,6 +402,27 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
                     />
                      {form.formState.errors.items?.[index]?.expiryDate && <p className="text-xs text-destructive mt-1">{form.formState.errors.items?.[index]?.expiryDate?.message}</p>}
                   </TableCell>
+                   <TableCell> {/* Warehouse Select Cell */}
+                     <Controller
+                       name={`items.${index}.warehouseId`}
+                       control={form.control}
+                       render={({ field: selectField }) => (
+                          <Select onValueChange={selectField.onChange} value={selectField.value || ''}>
+                              <SelectTrigger className="h-8 text-xs w-32">
+                                  <SelectValue placeholder="اختر مخزن..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                  {warehouses.map((wh) => (
+                                      <SelectItem key={wh.id} value={wh.id}>
+                                          {wh.name}
+                                      </SelectItem>
+                                  ))}
+                              </SelectContent>
+                          </Select>
+                       )}
+                     />
+                     {form.formState.errors.items?.[index]?.warehouseId && <p className="text-xs text-destructive mt-1">{form.formState.errors.items?.[index]?.warehouseId?.message}</p>}
+                   </TableCell>
                   <TableCell>
                      {((form.watch(`items.${index}.quantity`) || 0) * (form.watch(`items.${index}.cost`) || 0)).toFixed(2)} ر.س
                   </TableCell>
@@ -362,7 +441,7 @@ export function PurchaseForm({ suppliers, onSubmit, onClose }: PurchaseFormProps
               ))}
                {fields.length === 0 && (
                     <TableRow>
-                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                        <TableCell colSpan={7} className="h-24 text-center text-muted-foreground"> {/* Adjusted colspan */}
                             لم يتم إضافة أصناف بعد. ابحث عن منتج وأضفه.
                         </TableCell>
                     </TableRow>

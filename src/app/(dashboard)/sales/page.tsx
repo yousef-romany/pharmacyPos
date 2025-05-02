@@ -13,9 +13,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { Receipt, Printer, Eye, CreditCard, Coins, Landmark, ShieldCheck } from 'lucide-react'; // Added icons for payment methods & insurance
+import { Receipt, Printer, Eye, CreditCard, Coins, Landmark, ShieldCheck, Trash2 } from 'lucide-react'; // Added icons for payment methods & insurance, Trash2
 import type { SaleTransaction, SaleTransactionItem, Customer, PaymentMethod } from '@/lib/types'; // Import the type and Customer
-import { getSales, getCustomers, getProductById, getCustomerById } from '@/lib/data'; // Import data fetching functions (getProductById needed for details)
+import { getSales, getCustomers, getProductById, getCustomerById, deleteSale } from '@/lib/data'; // Import data fetching functions, add deleteSale
 import {
   Dialog,
   DialogContent,
@@ -25,12 +25,31 @@ import {
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'; // Import AlertDialog components
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton'; // Import Skeleton
 import { format } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge'; // Import Badge
 import { cn } from '@/lib/utils';
+
+// Helper function to safely parse floats (can be moved to utils)
+const safeParseFloat = (value: string | number | null | undefined, defaultValue = 0): number => {
+    if (value === null || value === undefined) return defaultValue;
+    const parsed = parseFloat(value.toString());
+    return isNaN(parsed) ? defaultValue : parsed;
+};
+
 
 // --- Sale Details Dialog ---
 interface SaleDetailsDialogProps {
@@ -81,11 +100,11 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
 
                      // Calculate original price *before* discount for the sold unit
                      const originalUnitPrice = product ? (item.soldUnitType === 'sub' && product.subUnitsPerUnit
-                        ? product.price / product.subUnitsPerUnit
-                        : product.price) : item.price / (1 - (product?.discountRate ?? 0) / 100); // Estimate if product missing
+                        ? safeParseFloat(product.price) / product.subUnitsPerUnit
+                        : safeParseFloat(product.price)) : safeParseFloat(item.price) / (1 - (safeParseFloat(product?.discountRate) / 100)); // Estimate if product missing
 
-                     calculatedOriginalTotal += originalUnitPrice * item.quantity;
-                     calculatedSubTotal += item.price * item.quantity; // item.price is after product discount
+                     calculatedOriginalTotal += originalUnitPrice * safeParseFloat(item.quantity);
+                     calculatedSubTotal += safeParseFloat(item.price) * safeParseFloat(item.quantity); // item.price is after product discount
 
                     return {
                         ...item,
@@ -96,8 +115,8 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                 }));
                 setDetailedItems(itemsWithDetails);
                  // Use the pre-calculated originalTotalAmount if available, otherwise use the dynamically calculated one
-                 setLocalOriginalTotal(sale.originalTotalAmount ?? calculatedOriginalTotal);
-                 setLocalSubTotal(sale.subTotalAmount ?? calculatedSubTotal); // Use stored subtotal if available
+                 setLocalOriginalTotal(safeParseFloat(sale.originalTotalAmount, calculatedOriginalTotal));
+                 setLocalSubTotal(safeParseFloat(sale.subTotalAmount, calculatedSubTotal)); // Use stored subtotal if available
             } catch (error) {
                 console.error("Failed to fetch sale item details:", error);
                  // Handle error (e.g., show toast)
@@ -121,8 +140,10 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
 
     const paymentInfo = getPaymentMethodInfo(sale.paymentMethod);
      const totalProductDiscount = localOriginalTotal - localSubTotal;
-     const insuranceDiscountAmount = localSubTotal * ((sale.appliedInsuranceDiscountRate ?? 0) / 100);
+     const insuranceDiscountAmount = localSubTotal * (safeParseFloat(sale.appliedInsuranceDiscountRate) / 100);
      const totalDiscount = totalProductDiscount + insuranceDiscountAmount;
+     const finalTotal = safeParseFloat(sale.totalAmount);
+     const amountPaid = safeParseFloat(sale.amountPaid);
 
 
     // Basic print function (opens print dialog for the content)
@@ -137,19 +158,19 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                      itemsHtmlForPrint = '<tr><td colspan="5">جاري تحميل تفاصيل الأصناف...</td></tr>';
                  } else {
                      detailedItems.forEach(item => {
-                        const hasDiscount = item.originalPrice !== item.price;
+                        const hasDiscount = item.originalPrice !== safeParseFloat(item.price);
                          itemsHtmlForPrint += `
                              <tr>
                                  <td>${item.productName}</td>
                                  <td>${item.unitLabel}</td>
-                                 <td>${item.quantity}</td>
-                                 <td>${item.price.toFixed(2)} ${hasDiscount ? `<span style="font-size:0.8em; color:gray; text-decoration: line-through;">(${item.originalPrice.toFixed(2)})</span>` : ''}</td>
-                                 <td>${(item.quantity * item.price).toFixed(2)}</td>
+                                 <td>${safeParseFloat(item.quantity)}</td>
+                                 <td>${safeParseFloat(item.price).toFixed(2)} ${hasDiscount ? `<span style="font-size:0.8em; color:gray; text-decoration: line-through;">(${item.originalPrice.toFixed(2)})</span>` : ''}</td>
+                                 <td>${(safeParseFloat(item.quantity) * safeParseFloat(item.price)).toFixed(2)}</td>
                              </tr>
                          `;
                      });
                  }
-                 const remainingAmount = sale.totalAmount - sale.amountPaid;
+                 const remainingAmount = finalTotal - amountPaid;
 
                 printWindow.document.write(`
                  <html>
@@ -186,7 +207,7 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                          <p><strong>التاريخ:</strong> ${new Date(sale.date).toLocaleString('ar-SA', { dateStyle: 'medium', timeStyle: 'short'})}</p>
                          <p><strong>العميل:</strong> ${customerName || 'عميل نقدي'}</p>
                          <p><strong>طريقة الدفع:</strong> <span class="payment-method">${paymentInfo.text}</span></p>
-                         ${sale.appliedInsuranceDiscountRate && sale.appliedInsuranceDiscountRate > 0 ? `<p><strong>خصم التأمين المطبق:</strong> ${sale.appliedInsuranceDiscountRate}%</p>` : ''}
+                         ${safeParseFloat(sale.appliedInsuranceDiscountRate) > 0 ? `<p><strong>خصم التأمين المطبق:</strong> ${safeParseFloat(sale.appliedInsuranceDiscountRate)}%</p>` : ''}
                      </div>
                      <table>
                          <thead>
@@ -205,12 +226,12 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                       <div class="totals">
                          <div><span>الإجمالي الأصلي:</span> ${localOriginalTotal.toFixed(2)} ر.س</div>
                          ${totalProductDiscount > 0 ? `<div><span class="discount">خصم الأصناف:</span> <span class="discount">- ${totalProductDiscount.toFixed(2)} ر.س</span></div>` : ''}
-                         ${insuranceDiscountAmount > 0 ? `<div><span class="discount">خصم التأمين (${sale.appliedInsuranceDiscountRate}%):</span> <span class="discount">- ${insuranceDiscountAmount.toFixed(2)} ر.س</span></div>` : ''}
+                         ${insuranceDiscountAmount > 0 ? `<div><span class="discount">خصم التأمين (${safeParseFloat(sale.appliedInsuranceDiscountRate)}%):</span> <span class="discount">- ${insuranceDiscountAmount.toFixed(2)} ر.س</span></div>` : ''}
                           <hr style="border: none; border-top: 1px dashed #ccc; margin: 5px 0;">
-                         <div><span>المبلغ المدفوع:</span> ${sale.amountPaid.toFixed(2)} ر.س</div>
+                         <div><span>المبلغ المدفوع:</span> ${amountPaid.toFixed(2)} ر.س</div>
                           ${remainingAmount > 0 && sale.paymentMethod === 'debt' ? `<div><span>المبلغ المتبقي (آجل):</span> ${remainingAmount.toFixed(2)} ر.س</div>` : ''}
                            ${remainingAmount < 0 ? `<div><span>المبلغ المرجع:</span> ${Math.abs(remainingAmount).toFixed(2)} ر.س</div>` : ''}
-                         <div><strong>الإجمالي النهائي:</strong> <strong>${sale.totalAmount.toFixed(2)} ر.س</strong></div>
+                         <div><strong>الإجمالي النهائي:</strong> <strong>${finalTotal.toFixed(2)} ر.س</strong></div>
                      </div>
                       <button onclick="window.print()">طباعة</button>
                       <button onclick="window.close()">إغلاق</button>
@@ -240,11 +261,11 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                              {paymentInfo.text}
                          </Badge>
                      </p>
-                     {sale.appliedInsuranceDiscountRate && sale.appliedInsuranceDiscountRate > 0 && (
+                     {safeParseFloat(sale.appliedInsuranceDiscountRate) > 0 && (
                          <p className='flex items-center'><strong className="ml-1">خصم التأمين:</strong>
                             <Badge variant="secondary" className="mr-1 px-1.5 py-0.5 text-xs font-medium text-blue-700">
                                  <ShieldCheck className="ml-1 h-3 w-3" />
-                                 {sale.appliedInsuranceDiscountRate}%
+                                 {safeParseFloat(sale.appliedInsuranceDiscountRate)}%
                              </Badge>
                          </p>
                      )}
@@ -270,17 +291,17 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                         </TableHeader>
                         <TableBody>
                              {detailedItems.map((item, index) => {
-                                const hasDiscount = item.originalPrice !== item.price;
+                                const hasDiscount = item.originalPrice !== safeParseFloat(item.price);
                                 return (
                                     <TableRow key={`${item.productId}-${index}`}>
                                         <TableCell>{item.productName}</TableCell>
                                         <TableCell>{item.unitLabel}</TableCell>
-                                        <TableCell>{item.quantity}</TableCell>
+                                        <TableCell>{safeParseFloat(item.quantity)}</TableCell>
                                          <TableCell>
-                                             {item.price.toFixed(2)}
+                                             {safeParseFloat(item.price).toFixed(2)}
                                              {hasDiscount && <span className="text-xs text-muted-foreground line-through mr-1">({item.originalPrice.toFixed(2)})</span>}
                                          </TableCell>
-                                        <TableCell>{(item.quantity * item.price).toFixed(2)} ر.س</TableCell>
+                                        <TableCell>{(safeParseFloat(item.quantity) * safeParseFloat(item.price)).toFixed(2)} ر.س</TableCell>
                                     </TableRow>
                                 );
                               })}
@@ -307,24 +328,24 @@ export function SaleDetailsDialog({ sale, customerName, onClose }: SaleDetailsDi
                       )}
 
                      <span>المبلغ المدفوع:</span>
-                     <span className="font-semibold">{sale.amountPaid.toFixed(2)} ر.س</span>
+                     <span className="font-semibold">{amountPaid.toFixed(2)} ر.س</span>
 
-                      {sale.paymentMethod === 'debt' && (sale.totalAmount - sale.amountPaid) > 0 && (
+                      {sale.paymentMethod === 'debt' && (finalTotal - amountPaid) > 0 && (
                            <>
                              <span>المبلغ المتبقي (آجل):</span>
-                             <span className="font-semibold text-red-600">{(sale.totalAmount - sale.amountPaid).toFixed(2)} ر.س</span>
+                             <span className="font-semibold text-red-600">{(finalTotal - amountPaid).toFixed(2)} ر.س</span>
                            </>
                        )}
-                       {(sale.totalAmount - sale.amountPaid) < 0 && (
+                       {(finalTotal - amountPaid) < 0 && (
                            <>
                              <span>المبلغ المرجع:</span>
-                             <span className="font-semibold text-green-700">{Math.abs(sale.totalAmount - sale.amountPaid).toFixed(2)} ر.س</span>
+                             <span className="font-semibold text-green-700">{Math.abs(finalTotal - amountPaid).toFixed(2)} ر.س</span>
                            </>
                        )}
 
 
                     <span className="text-lg font-bold col-start-1">الإجمالي النهائي:</span>
-                    <span className="text-lg font-bold">{sale.totalAmount.toFixed(2)} ر.س</span>
+                    <span className="text-lg font-bold">{finalTotal.toFixed(2)} ر.س</span>
                 </div>
             </div>
 
@@ -356,6 +377,7 @@ export default function SalesPage() {
   const [isLoading, setIsLoading] = React.useState(true);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [selectedSale, setSelectedSale] = React.useState<SaleTransaction | null>(null); // For details dialog
+  const [saleToDelete, setSaleToDelete] = React.useState<SaleTransaction | null>(null); // For delete confirmation
   const { toast } = useToast();
 
   const fetchData = React.useCallback(async () => {
@@ -383,6 +405,27 @@ export default function SalesPage() {
     fetchData(); // Fetch data on mount
   }, [fetchData]);
 
+   const handleDeleteSale = async () => {
+    if (!saleToDelete) return;
+    setIsLoading(true); // Consider a specific loading state for deletion
+     try {
+       const success = await deleteSale(saleToDelete.id);
+       if (success) {
+         toast({ title: "نجاح", description: `تم حذف الفاتورة ${saleToDelete.id} بنجاح.` });
+         setSaleToDelete(null); // Close confirmation dialog
+         fetchData(); // Refresh the list
+       } else {
+          throw new Error("Delete operation returned false");
+       }
+     } catch (error) {
+       console.error("Failed to delete sale:", error);
+       toast({ title: "خطأ", description: `فشل حذف الفاتورة: ${error instanceof Error ? error.message : String(error)}`, variant: "destructive" });
+       setSaleToDelete(null); // Close confirmation dialog even on error
+     } finally {
+        setIsLoading(false);
+     }
+  };
+
 
    const filteredSales = sales.filter(sale =>
      sale.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -393,90 +436,118 @@ export default function SalesPage() {
 
 
   return (
-    <Dialog onOpenChange={(open) => !open && setSelectedSale(null)}> {/* Reset selectedSale on dialog close */}
-        <div className="p-4 md:p-6 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-semibold flex items-center gap-2">
-              <Receipt className="w-6 h-6" />
-              فواتير البيع
-            </h2>
-             {/* Add New Sale Button (Optional - maybe link to POS) */}
-          </div>
+     <AlertDialog> {/* Wrap with AlertDialog for delete confirmation */}
+        <Dialog onOpenChange={(open) => !open && setSelectedSale(null)}> {/* Reset selectedSale on dialog close */}
+            <div className="p-4 md:p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-2xl font-semibold flex items-center gap-2">
+                  <Receipt className="w-6 h-6" />
+                  فواتير البيع
+                </h2>
+                 {/* Add New Sale Button (Optional - maybe link to POS) */}
+              </div>
 
-          <div className="flex items-center py-4">
-            <Input
-              placeholder="ابحث برقم الفاتورة, العميل, أو كود المنتج..."
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              className="max-w-md"
-            />
-          </div>
+              <div className="flex items-center py-4">
+                <Input
+                  placeholder="ابحث برقم الفاتورة, العميل, أو كود المنتج..."
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  className="max-w-md"
+                />
+              </div>
 
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>رقم الفاتورة</TableHead>
-                  <TableHead>العميل</TableHead>
-                  <TableHead>تاريخ الفاتورة</TableHead>
-                   <TableHead>طريقة الدفع</TableHead>
-                  <TableHead>إجمالي المبلغ (ر.س)</TableHead>
-                  <TableHead>عدد الأصناف</TableHead>
-                   <TableHead className="text-right">إجراءات</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
-                      جاري تحميل الفواتير...
-                    </TableCell>
-                  </TableRow>
-                ) : filteredSales.length > 0 ? (
-                  filteredSales.map((sale) => {
-                     const paymentInfo = getPaymentMethodInfo(sale.paymentMethod);
-                      return (
-                        <TableRow key={sale.id}>
-                          <TableCell className="font-medium">{sale.id.substring(0, 8)}...</TableCell>
-                          <TableCell>{sale.customerId ? (customers.get(sale.customerId) || sale.customerId) : 'عميل نقدي'}</TableCell>
-                          <TableCell>{format(new Date(sale.date), 'dd/MM/yyyy p', { locale: arSA })}</TableCell>
-                           <TableCell>
-                               <Badge variant="outline" className={cn("px-1.5 py-0.5 text-xs", paymentInfo.color)}>
-                                  <paymentInfo.icon className="ml-1 h-3 w-3" />
-                                  {paymentInfo.text}
-                              </Badge>
-                           </TableCell>
-                          <TableCell>{sale.totalAmount.toFixed(2)}</TableCell>
-                           <TableCell>{sale.items.length}</TableCell>
-                          <TableCell className="text-right">
-                             <DialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedSale(sale)}>
-                                    <Eye className="h-4 w-4" />
-                                </Button>
-                             </DialogTrigger>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-24 text-center">
-                      لا توجد فواتير بيع لعرضها.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-           {/* Add Pagination later if needed */}
-        </div>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>رقم الفاتورة</TableHead>
+                      <TableHead>العميل</TableHead>
+                      <TableHead>تاريخ الفاتورة</TableHead>
+                       <TableHead>طريقة الدفع</TableHead>
+                      <TableHead>إجمالي المبلغ (ر.س)</TableHead>
+                      <TableHead>عدد الأصناف</TableHead>
+                       <TableHead className="text-right">إجراءات</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {isLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="h-24 text-center">
+                          جاري تحميل الفواتير...
+                        </TableCell>
+                      </TableRow>
+                    ) : filteredSales.length > 0 ? (
+                      filteredSales.map((sale) => {
+                         const paymentInfo = getPaymentMethodInfo(sale.paymentMethod);
+                          return (
+                            <TableRow key={sale.id}>
+                              <TableCell className="font-medium">{sale.id.substring(0, 8)}...</TableCell>
+                              <TableCell>{sale.customerId ? (customers.get(sale.customerId) || sale.customerId) : 'عميل نقدي'}</TableCell>
+                              <TableCell>{format(new Date(sale.date), 'dd/MM/yyyy p', { locale: arSA })}</TableCell>
+                               <TableCell>
+                                   <Badge variant="outline" className={cn("px-1.5 py-0.5 text-xs", paymentInfo.color)}>
+                                      <paymentInfo.icon className="ml-1 h-3 w-3" />
+                                      {paymentInfo.text}
+                                  </Badge>
+                               </TableCell>
+                              <TableCell>{safeParseFloat(sale.totalAmount).toFixed(2)}</TableCell>
+                               <TableCell>{sale.items.length}</TableCell>
+                              <TableCell className="text-right space-x-1">
+                                 <DialogTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-100" onClick={() => setSelectedSale(sale)}>
+                                        <Eye className="h-4 w-4" />
+                                    </Button>
+                                 </DialogTrigger>
+                                 {/* Add Edit Button later if needed */}
+                                  <AlertDialogTrigger asChild>
+                                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" onClick={() => setSaleToDelete(sale)}>
+                                         <Trash2 className="h-4 w-4" />
+                                     </Button>
+                                  </AlertDialogTrigger>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={7} className="h-24 text-center">
+                          لا توجد فواتير بيع لعرضها.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+               {/* Add Pagination later if needed */}
+            </div>
 
-        {/* Sale Details Dialog Content */}
-         <SaleDetailsDialog
-            sale={selectedSale}
-            customerName={selectedSale?.customerId ? customers.get(selectedSale.customerId) : undefined}
-            onClose={() => setSelectedSale(null)}
-         />
-    </Dialog>
+            {/* Sale Details Dialog Content */}
+             <SaleDetailsDialog
+                sale={selectedSale}
+                customerName={selectedSale?.customerId ? customers.get(selectedSale.customerId) : undefined}
+                onClose={() => setSelectedSale(null)}
+             />
+        </Dialog>
+
+         {/* Alert Dialog for Delete Confirmation */}
+         <AlertDialogContent>
+           <AlertDialogHeader>
+             <AlertDialogTitle>تأكيد الحذف</AlertDialogTitle>
+             <AlertDialogDescription>
+                هل أنت متأكد أنك تريد حذف الفاتورة رقم "{saleToDelete?.id}"؟ سيتم إلغاء تأثير هذه الفاتورة على المخزون ورصيد العميل (إن وجد). لا يمكن التراجع عن هذا الإجراء.
+             </AlertDialogDescription>
+           </AlertDialogHeader>
+           <AlertDialogFooter>
+             <AlertDialogCancel onClick={() => setSaleToDelete(null)}>إلغاء</AlertDialogCancel>
+             <AlertDialogAction
+                className="bg-destructive hover:bg-destructive/90"
+                onClick={handleDeleteSale}
+                disabled={isLoading}
+             >
+                {isLoading ? 'جاري الحذف...' : 'حذف الفاتورة'}
+             </AlertDialogAction>
+           </AlertDialogFooter>
+         </AlertDialogContent>
+     </AlertDialog>
   );
 }

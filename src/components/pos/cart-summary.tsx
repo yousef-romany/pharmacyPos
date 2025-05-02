@@ -27,12 +27,31 @@ import { Input } from '@/components/ui/input'; // Import Input
 import { cn } from '@/lib/utils'; // Import cn
 
 // Helper to apply discount - copied for local use if needed, but ideally imported
-const applyDiscount = (price: number, discountRate?: number): number => {
-    if (discountRate && discountRate > 0 && discountRate <= 100) {
-        return price * (1 - discountRate / 100);
+const applyDiscount = (price: number, discountRate?: number | string | null): number => {
+    const rate = safeParseFloat(discountRate);
+    if (rate > 0 && rate <= 100) {
+        return price * (1 - rate / 100);
     }
     return price;
 };
+
+
+// Helper to safely parse floats (can be moved to utils)
+const safeParseFloat = (value: string | number | null | undefined, defaultValue = 0): number => {
+    if (value === null || value === undefined) return defaultValue;
+    const parsed = parseFloat(value.toString());
+    return isNaN(parsed) ? defaultValue : parsed;
+};
+
+// Helper to calculate price per sub-unit (before discount)
+const calculateOriginalSubUnitPrice = (product: Product): number => {
+    const price = safeParseFloat(product.price);
+    if (product.subUnitsPerUnit && product.subUnitsPerUnit > 0) {
+        return price / product.subUnitsPerUnit;
+    }
+    return price; // If no sub-units, sub-unit price is the same as main unit price
+};
+
 
 // Payment Method Options
 const paymentMethods: { value: PaymentMethod, label: string, icon: React.ElementType }[] = [
@@ -41,8 +60,11 @@ const paymentMethods: { value: PaymentMethod, label: string, icon: React.Element
     { value: 'debt', label: 'آجل/مديونية', icon: Landmark },
 ];
 
+interface CartSummaryProps {
+  onCheckoutSuccess?: () => void; // Optional callback after successful checkout
+}
 
-export function CartSummary() {
+export function CartSummary({ onCheckoutSuccess }: CartSummaryProps) {
   // Use getOriginalTotalPrice from the hook
   const { items, getTotalPrice, getItemCount, clearCart, getOriginalTotalPrice } = useCart();
   const { toast } = useToast();
@@ -95,13 +117,13 @@ export function CartSummary() {
 
   // Reset amountPaid when total price changes or customer/insurance changes
   const subTotalPrice = getTotalPrice(); // Price after product discounts
-  const insuranceDiscountRate = selectedCustomer?.insuranceDiscountRate ?? 0;
+  const insuranceDiscountRate = safeParseFloat(selectedCustomer?.insuranceDiscountRate); // Parse rate safely
   const insuranceDiscountAmount = subTotalPrice * (insuranceDiscountRate / 100);
   const finalTotalPrice = subTotalPrice - insuranceDiscountAmount; // Final price after product AND insurance discounts
 
    React.useEffect(() => {
       setAmountPaid(finalTotalPrice);
-   }, [items, finalTotalPrice]); // Dependency includes finalTotalPrice
+   }, [finalTotalPrice]); // Dependency includes finalTotalPrice
 
 
   // Pre-fetch product details for items in the cart
@@ -148,7 +170,7 @@ export function CartSummary() {
      // Lookup customer name
     const customerForPrint = saleToPrint.customerId ? await getCustomerById(saleToPrint.customerId) : null;
     const customerName = customerForPrint ? customerForPrint.name : 'عميل نقدي';
-    const paymentInfo = paymentMethods.find(p => p.value === saleToPrint.paymentMethod) || { text: saleToPrint.paymentMethod };
+    const paymentInfo = paymentMethods.find(p => p.value === saleToPrint.paymentMethod) || { label: saleToPrint.paymentMethod, value: saleToPrint.paymentMethod };
 
     for (const item of saleToPrint.items) {
         let product = productDetailsMap.get(item.productId);
@@ -170,35 +192,36 @@ export function CartSummary() {
 
         // Calculate original price for this item based on the stored product details
          const originalUnitPrice = item.soldUnitType === 'sub'
-             ? (product ? product.price / (product.subUnitsPerUnit || 1) : item.price / (1 - (product?.discountRate || 0)/100) ) // Estimate original if needed
-             : (product ? product.price : item.price / (1 - (product?.discountRate || 0)/100) ); // Estimate original if needed
+             ? calculateOriginalSubUnitPrice(product!) // Use fetched/cached product
+             : safeParseFloat(product?.price); // Use fetched/cached product price
 
-        const originalItemTotal = originalUnitPrice * item.quantity;
+        const originalItemTotal = originalUnitPrice * safeParseFloat(item.quantity);
         calculatedOriginalTotal += originalItemTotal;
-        calculatedSubTotal += item.price * item.quantity; // item.price is after product discount
+        calculatedSubTotal += safeParseFloat(item.price) * safeParseFloat(item.quantity); // item.price is after product discount
 
-        const hasDiscount = item.price !== originalUnitPrice;
+        const hasDiscount = safeParseFloat(item.price) !== originalUnitPrice;
 
         itemRowsHtml += `
              <tr>
                  <td>${productName}</td>
                  <td>${unitLabel}</td>
-                 <td>${item.quantity}</td>
-                 <td>${item.price.toFixed(2)} ${hasDiscount ? `<span style="font-size:0.8em; color:gray; text-decoration: line-through;">(${originalUnitPrice.toFixed(2)})</span>` : ''}</td>
-                 <td>${(item.quantity * item.price).toFixed(2)}</td>
+                 <td>${safeParseFloat(item.quantity)}</td>
+                 <td>${safeParseFloat(item.price).toFixed(2)} ${hasDiscount ? `<span style="font-size:0.8em; color:gray; text-decoration: line-through;">(${originalUnitPrice.toFixed(2)})</span>` : ''}</td>
+                 <td>${(safeParseFloat(item.quantity) * safeParseFloat(item.price)).toFixed(2)}</td>
              </tr>
          `;
      }
 
      // Use stored values if available, otherwise use calculated ones
-     const printOriginalTotal = saleToPrint.originalTotalAmount ?? calculatedOriginalTotal;
-     const printSubTotal = saleToPrint.subTotalAmount ?? calculatedSubTotal;
-     const printInsuranceDiscount = printSubTotal * ((saleToPrint.appliedInsuranceDiscountRate ?? 0) / 100);
-     const printFinalTotal = saleToPrint.totalAmount; // Should be correct from the sale record
+     const printOriginalTotal = safeParseFloat(saleToPrint.originalTotalAmount, calculatedOriginalTotal);
+     const printSubTotal = safeParseFloat(saleToPrint.subTotalAmount, calculatedSubTotal);
+     const printInsuranceDiscount = printSubTotal * (safeParseFloat(saleToPrint.appliedInsuranceDiscountRate) / 100);
+     const printFinalTotal = safeParseFloat(saleToPrint.totalAmount); // Should be correct from the sale record
      const printTotalProductDiscount = printOriginalTotal - printSubTotal;
+     const printAmountPaid = safeParseFloat(saleToPrint.amountPaid);
 
 
-    const remainingAmount = printFinalTotal - saleToPrint.amountPaid;
+    const remainingAmount = printFinalTotal - printAmountPaid;
 
     printWindow.document.write(`
      <html>
@@ -254,9 +277,9 @@ export function CartSummary() {
           <div class="totals">
              <div><span>الإجمالي الأصلي:</span> ${printOriginalTotal.toFixed(2)} ر.س</div>
              ${printTotalProductDiscount > 0 ? `<div><span class="discount">خصم الأصناف:</span> <span class="discount">- ${printTotalProductDiscount.toFixed(2)} ر.س</span></div>` : ''}
-             ${printInsuranceDiscount > 0 ? `<div><span class="discount">خصم التأمين (${saleToPrint.appliedInsuranceDiscountRate}%):</span> <span class="discount">- ${printInsuranceDiscount.toFixed(2)} ر.س</span></div>` : ''}
+             ${printInsuranceDiscount > 0 ? `<div><span class="discount">خصم التأمين (${safeParseFloat(saleToPrint.appliedInsuranceDiscountRate)}%):</span> <span class="discount">- ${printInsuranceDiscount.toFixed(2)} ر.س</span></div>` : ''}
              <hr style="border: none; border-top: 1px dashed #ccc; margin: 5px 0;">
-             <div><span>المبلغ المدفوع:</span> ${saleToPrint.amountPaid.toFixed(2)} ر.س</div>
+             <div><span>المبلغ المدفوع:</span> ${printAmountPaid.toFixed(2)} ر.س</div>
              ${remainingAmount > 0 && saleToPrint.paymentMethod === 'debt' ? `<div><span>المبلغ المتبقي (آجل):</span> ${remainingAmount.toFixed(2)} ر.س</div>` : ''}
               ${remainingAmount < 0 ? `<div><span>المبلغ المرجع:</span> ${Math.abs(remainingAmount).toFixed(2)} ر.س</div>` : ''}
              <div><strong>الإجمالي النهائي:</strong> <strong>${printFinalTotal.toFixed(2)} ر.س</strong></div>
@@ -302,7 +325,8 @@ export function CartSummary() {
         productId: item.id,
         quantity: item.cartQuantity,
         price: item.pricePerSelectedUnit, // This is the already discounted price (product discount)
-        soldUnitType: item.selectedUnitType
+        soldUnitType: item.selectedUnitType,
+        costAtSale: safeParseFloat(item.lastPurchaseCost), // Record cost at time of sale
       }));
 
       const saleData: Omit<SaleTransaction, 'id'> = {
@@ -329,7 +353,7 @@ export function CartSummary() {
 
       toast({
         title: "تمت عملية البيع بنجاح",
-        description: `فاتورة رقم ${newSale.id} | المبلغ ${newSale.totalAmount.toFixed(2)} ر.س`,
+        description: `فاتورة رقم ${newSale.id} | المبلغ ${safeParseFloat(newSale.totalAmount).toFixed(2)} ر.س`,
         action: (
            <Button variant="outline" size="sm" onClick={() => handlePrintInvoice(newSale)}>
                 <Printer className="ml-2 h-4 w-4" />
@@ -337,6 +361,10 @@ export function CartSummary() {
             </Button>
         ),
       });
+
+      // Call the success callback if provided (e.g., to refetch products in POS)
+      onCheckoutSuccess?.();
+
 
     } catch (error) {
       console.error("Checkout failed:", error);
@@ -442,7 +470,7 @@ export function CartSummary() {
                     {selectedCustomer?.insuranceCompany && (
                         <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1">
                              <ShieldCheck className="h-3 w-3 text-blue-600"/>
-                             <span>{selectedCustomer.insuranceCompany} (#{selectedCustomer.policyNumber}) - خصم {selectedCustomer.insuranceDiscountRate || 0}%</span>
+                             <span>{selectedCustomer.insuranceCompany} (#{selectedCustomer.policyNumber}) - خصم {safeParseFloat(selectedCustomer.insuranceDiscountRate) || 0}%</span>
                         </div>
                     )}
                 </div>
@@ -456,7 +484,7 @@ export function CartSummary() {
                         </SelectTrigger>
                         <SelectContent>
                             {paymentMethods.map((method) => (
-                                <SelectItem key={method.value} value={method.value} disabled={method.value === 'debt' && !selectedCustomerId}>
+                                <SelectItem key={method.value} value={method.value} disabled={method.value === 'debt' && (!selectedCustomerId || selectedCustomerId === 'undefined')}> {/* Disable Debt if no customer */}
                                     <div className="flex items-center gap-2">
                                         <method.icon className="h-4 w-4 text-muted-foreground"/>
                                         {method.label}
@@ -539,7 +567,7 @@ export function CartSummary() {
                   <Button
                     className="flex-1 bg-primary hover:bg-primary/90 text-primary-foreground"
                     onClick={handleCheckout}
-                    disabled={isCheckingOut || (selectedPaymentMethod === 'debt' && !selectedCustomerId)} // Disable if debt without customer
+                    disabled={isCheckingOut || (selectedPaymentMethod === 'debt' && (!selectedCustomerId || selectedCustomerId === 'undefined'))} // Disable if debt without customer
                   >
                      {isCheckingOut ? (
                        <Loader2 className="ml-2 h-4 w-4 animate-spin" />
