@@ -7,7 +7,7 @@
     "distDir": "../out"
   },
   "package": {
-    "productName": "Itqan",
+    "productName": "PharmacyPos",
     "version": "0.1.0"
   },
   "tauri": {

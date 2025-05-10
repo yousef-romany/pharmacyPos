@@ -135,7 +135,7 @@ function UserForm({ initialData, onSubmit, onClose }: UserFormProps) {
       </div>
       <div>
         <Label htmlFor="email">البريد الإلكتروني <span className="text-destructive">*</span></Label>
-        <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} required />
+        <Input id="email" name="email" type="text" value={formData.email} onChange={handleChange} required />
       </div>
        <div>
             <Label htmlFor="role">الدور/الصلاحية <span className="text-destructive">*</span></Label>
