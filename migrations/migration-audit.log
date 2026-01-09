@@ -1,0 +1,25 @@
+# Migration Audit Log
+# 
+# This file tracks all data conversions and invalid data handling during migrations
+# Format: CSV with headers
+# 
+# Fields:
+# - timestamp: When the conversion occurred
+# - migration_id: ID of the migration (e.g., 001_add_version_columns, 002_varchar_to_decimal)
+# - table_name: Name of the table affected
+# - column_name: Name of the column converted
+# - record_id: ID of the affected record
+# - original_value: The original value before conversion
+# - converted_value: The value after conversion (usually 0 for invalid data)
+# - conversion_reason: Why the conversion was performed
+#
+# IMPORTANT: Review this log after migration to identify records that need manual correction
+# Records with invalid numeric data are converted to 0 and logged here for manual review
+#
+# Example entry:
+# 2026-01-09T15:00:00.000Z,002_varchar_to_decimal,Products,price,123,15.99,"Invalid numeric value"
+#
+# Migration: 002_varchar_to_decimal
+# Date: 2026-01-09
+# Purpose: Convert VARCHAR to DECIMAL for numeric fields
+# Action Required: Review records below and correct critical data (e.g., products with 0 price)

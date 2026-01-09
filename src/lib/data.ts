@@ -2,6 +2,8 @@ import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction,
 import { Pill, Baby, SprayCan, Activity, LucideIcon } from 'lucide-react';
 import { differenceInDays, addDays, isBefore, isSameDay, startOfDay, endOfDay, format as formatDate } from 'date-fns'; // Import format from date-fns
 import db from '@/lib/db'; // Import the potentially initialized database instance
+import { withTransaction } from './db/transaction';
+import { saleRepository } from './repositories/sales';
 
 // --- Helper Functions ---
 
@@ -257,8 +259,8 @@ export async function updateWarehouse(id: string, updates: Partial<Omit<Warehous
         let dbValue = newValue;
 
         if (key === 'isDefault') {
-            dbValue = newValue ? 1 : 0;
-            originalValue = parseBooleanFromDB(originalValue) ? 1 : 0;
+            dbValue = newValue ? 1 : 0 as any;
+            originalValue = parseBooleanFromDB(originalValue) ? 1 : 0 as any;
         }
 
         if (dbValue !== originalValue) {
@@ -449,12 +451,20 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
     for (const key of updateKeys) {
         let newValue = updates[key];
         let originalValue = currentProduct[key]; // Get original value (could be string)
-        let dbValue = newValue; // Value to be sent to DB
+        let dbValue: any = newValue; // Value to be sent to DB
 
         // Convert numbers to strings for DB update if the key requires it
-        if (key === 'quantity' || key === 'price' || key === 'lastPurchaseCost' || key === 'discountRate' || key === 'balance' || key === 'insuranceDiscountRate') {
-            dbValue = formatNumberForDB(newValue);
-            originalValue = formatNumberForDB(originalValue); // Compare strings
+        if (key === 'quantity' || key === 'price' || key === 'lastPurchaseCost' || key === 'discountRate') {
+            const formattedNewValue = formatNumberForDB(newValue as string | number | undefined);
+            const formattedOriginalValue = formatNumberForDB(originalValue as string | number | undefined);
+            
+            // Skip update if formatting fails (returns null)
+            if (formattedNewValue === null) {
+                continue;
+            }
+            
+            dbValue = formattedNewValue;
+            originalValue = formattedOriginalValue || originalValue; // Compare strings
         }
         // Handle INT types (no conversion needed for DB)
         if (key === 'subUnitsPerUnit') dbValue = newValue !== undefined && Number(newValue) > 0 ? Number(newValue) : null;
@@ -462,15 +472,17 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
 
         // Handle special types
         if (key === 'expiryDate') {
-            dbValue = formatDateForDB(newValue as Date | undefined); // Use DATE format
-            originalValue = formatDateForDB(originalValue as Date | undefined);
+            const formattedDate = formatDateForDB(newValue as Date | undefined);
+            const formattedOriginalDate = formatDateForDB(originalValue as Date | undefined);
+            dbValue = formattedDate;
+            originalValue = formattedOriginalDate || originalValue;
         }
         if (key === 'categoryIcon') dbValue = getIconName(newValue as LucideIcon);
         // Note: warehouseId updates are handled like other fields if included in `updates`
 
         // Only add to update if the DB value has actually changed
         if (String(dbValue) !== String(originalValue)) { // Robust comparison
-            updatedFields[key] = updates[key]; // Keep original type from updates object
+            (updatedFields as any)[key] = updates[key]; // Keep original type from updates object
             setClause.push(`${key} = ?`);
             params.push(dbValue); // Use potentially formatted value for DB query
         }
@@ -602,9 +614,8 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' |
      const defaultTreasuryId = await getDefaultTreasuryId(); // Assume this function exists or create it
      const targetTreasuryId = purchaseData.paymentTreasuryId || defaultTreasuryId; // Allow specifying payment source
 
-    // Start transaction... (Conceptual)
-     console.log("Starting addPurchase transaction...");
-   try {
+    // Use transaction wrapper for atomic transaction (FR-001, FR-002, FR-003)
+    return await withTransaction(async (tx) => {
          console.log("Inserting Purchase Transaction:", newPurchaseId);
         const purchaseQuery = `
            INSERT INTO PurchaseTransactions (
@@ -622,7 +633,7 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' |
            targetWarehouseId, // Store destination warehouse
            targetTreasuryId, // Store payment treasury
        ];
-        await (await db).execute(purchaseQuery, purchaseParams);
+        await tx.execute(purchaseQuery, purchaseParams);
          console.log("Purchase Transaction inserted.");
 
 
@@ -641,82 +652,82 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' |
                formatNumberForDB(item.cost), // Format number to string
                formattedExpiry
            ];
-            console.log(`Inserting Purchase Item: ${JSON.stringify(itemParams)}`);
-           await (await db).execute(itemQuery, itemParams);
-            console.log("Purchase Item inserted.");
+             console.log(`Inserting Purchase Item: ${JSON.stringify(itemParams)}`);
+           await tx.execute(itemQuery, itemParams);
+             console.log("Purchase Item inserted.");
 
 
            // Update product stock, last cost, expiry (Requires parsing)
             console.log(`Updating stock/cost/expiry for product ${item.productId} in warehouse ${targetWarehouseId}`);
-             // Find product specifically in the target warehouse
-             const productResults = await (await db).select("SELECT * FROM Products WHERE id = ? AND warehouseId = ?", [item.productId, targetWarehouseId]);
-             const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
+              // Find product specifically in the target warehouse
+              const productResults = await tx.execute("SELECT * FROM Products WHERE id = ? AND warehouseId = ?", [item.productId, targetWarehouseId]);
+              const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
 
-            if (product) {
-                const currentStockNum = parseFloatFromDB(product.quantity);
-                const quantityAddedNum = parseFloatFromDB(item.quantity);
-                const newStockLevelNum = currentStockNum + quantityAddedNum;
-                const purchaseCostNum = parseFloatFromDB(item.cost);
-                 console.log(`Current Stock: ${currentStockNum}, Qty Added: ${quantityAddedNum}, New Stock: ${newStockLevelNum}, Purchase Cost: ${purchaseCostNum}`);
-
-
-               // Only update expiry if the new purchase expiry is provided
-               let expiryUpdateClause = "";
-               let expiryParams = [];
-               if (formattedExpiry) {
-                    expiryUpdateClause = ", expiryDate = ?";
-                    expiryParams.push(formattedExpiry);
-                    console.log(`Updating expiry date to: ${formattedExpiry}`);
-               } else {
-                    console.log("No expiry date provided for this purchase item, product expiry remains unchanged.");
-               }
+           if (product) {
+               const currentStockNum = parseFloatFromDB(product.quantity);
+               const quantityAddedNum = parseFloatFromDB(item.quantity);
+               const newStockLevelNum = currentStockNum + quantityAddedNum;
+               const purchaseCostNum = parseFloatFromDB(item.cost);
+                console.log(`Current Stock: ${currentStockNum}, Qty Added: ${quantityAddedNum}, New Stock: ${newStockLevelNum}, Purchase Cost: ${purchaseCostNum}`);
 
 
-               const stockUpdateQuery = `
-                    UPDATE Products
-                    SET quantity = ?, lastPurchaseCost = ? ${expiryUpdateClause}
-                    WHERE id = ? AND warehouseId = ?
-                `;
-                const updateParams = [
-                    formatNumberForDB(newStockLevelNum), // Format new stock as string
-                    formatNumberForDB(purchaseCostNum), // Format cost as string
-                    ...expiryParams, // Spread the expiry parameter(s) if any
-                    item.productId,
-                    targetWarehouseId // Ensure update happens in the correct warehouse
-                ];
+              // Only update expiry if the new purchase expiry is provided
+              let expiryUpdateClause = "";
+              let expiryParams = [];
+              if (formattedExpiry) {
+                   expiryUpdateClause = ", expiryDate = ?";
+                   expiryParams.push(formattedExpiry);
+                   console.log(`Updating expiry date to: ${formattedExpiry}`);
+              } else {
+                   console.log("No expiry date provided for this purchase item, product expiry remains unchanged.");
+              }
+
+
+              const stockUpdateQuery = `
+                   UPDATE Products
+                   SET quantity = ?, lastPurchaseCost = ? ${expiryUpdateClause}
+                   WHERE id = ? AND warehouseId = ?
+               `;
+               const updateParams = [
+                   formatNumberForDB(newStockLevelNum), // Format new stock as string
+                   formatNumberForDB(purchaseCostNum), // Format cost as string
+                   ...expiryParams, // Spread the expiry parameter(s) if any
+                   item.productId,
+                   targetWarehouseId // Ensure update happens in the correct warehouse
+               ];
                 console.log(`Executing stock update query with params: ${JSON.stringify(updateParams)}`);
-               await (await db).execute(stockUpdateQuery, updateParams);
+               await tx.execute(stockUpdateQuery, updateParams);
                 console.log("Stock/cost/expiry updated.");
-            } else {
-                // Product doesn't exist in this warehouse, add it automatically?
-                 console.warn(`Product ${item.productId} not found in warehouse ${targetWarehouseId}. Automatically adding...`);
-                 // Create a basic product entry in the target warehouse
-                 const newProductData: Omit<Product, 'id'> = {
-                     nameAr: 'منتج جديد تلقائي', // Placeholder name, consider fetching from another warehouse or requiring manual entry
-                     nameEn: 'Auto-added product',
-                     price: '0', // Placeholder price
-                     lastPurchaseCost: formatNumberForDB(item.cost),
-                     quantity: formatNumberForDB(item.quantity)!,
-                     unitType: 'وحدة', // Placeholder unit type
-                     warehouseId: targetWarehouseId,
-                     expiryDate: item.expiryDate, // Pass expiry if available
-                 };
-                 await addProduct(newProductData); // Add the product
-                 console.log(`Product ${item.productId} added to warehouse ${targetWarehouseId}.`);
-            }
-        }
+           } else {
+               // Product doesn't exist in this warehouse, add it automatically?
+                console.warn(`Product ${item.productId} not found in warehouse ${targetWarehouseId}. Automatically adding...`);
+                // Create a basic product entry in the target warehouse
+                const newProductData: Omit<Product, 'id'> = {
+                    nameAr: 'منتج جديد تلقائي', // Placeholder name, consider fetching from another warehouse or requiring manual entry
+                    nameEn: 'Auto-added product',
+                    price: '0', // Placeholder price
+                    lastPurchaseCost: formatNumberForDB(item.cost) || undefined,
+                    quantity: formatNumberForDB(item.quantity) || '0',
+                    unitType: 'وحدة', // Placeholder unit type
+                    warehouseId: targetWarehouseId,
+                    expiryDate: item.expiryDate, // Pass expiry if available
+                };
+                await addProduct(newProductData); // Add the product
+                console.log(`Product ${item.productId} added to warehouse ${targetWarehouseId}.`);
+           }
+       }
 
-          // 4. Add Treasury Transaction for the payment made from the correct treasury
-          if (amountPaidNum > 0) {
-             await addTreasuryTransaction({
+         // 4. Add Treasury Transaction for the payment made from the correct treasury
+         if (amountPaidNum > 0) {
+            await addTreasuryTransaction({
                 type: 'purchase_payment',
                 amount: formatNumberForDB(-amountPaidNum)!, // Pass as string, ensure it's negative
                 date: purchaseData.date, // Use the same date as the purchase
                 description: `دفعة لمورد ${purchaseData.supplierId} - فاتورة ${newPurchaseId}`,
                 relatedDocumentId: newPurchaseId,
                 treasuryId: targetTreasuryId, // Associate with the paying treasury
-             });
-          }
+            });
+         }
 
         // Commit transaction... (Conceptual)
          console.log("Committing addPurchase transaction...");
@@ -730,13 +741,7 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' |
          }
          console.log("addPurchase finished successfully.");
         return finalPurchaseData; // Cast needed
-
-   } catch (error) {
-       // Rollback transaction... (Conceptual)
-       console.error("Error adding purchase transaction:", error);
-       console.log("Rolling back addPurchase transaction...");
-       throw error;
-   }
+    });
 }
 
 // --- Inventory Report (Linked to Physical Warehouses) ---
@@ -932,8 +937,8 @@ export async function updateCustomer(id: string, updates: Partial<Customer>): Pr
         let originalValue = currentCustomer[typedKey];
 
         if (typedKey === 'balance' || typedKey === 'insuranceDiscountRate') {
-            dbValue = formatNumberForDB(safeUpdates[typedKey]);
-            originalValue = formatNumberForDB(currentCustomer[typedKey]); // Compare strings
+            dbValue = formatNumberForDB(safeUpdates[typedKey]) as any;
+            originalValue = formatNumberForDB(currentCustomer[typedKey] as string | undefined) as any; // Compare strings
         }
 
         if (String(dbValue) !== String(originalValue)) { // Compare as strings
@@ -1036,9 +1041,8 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
     const defaultTreasuryId = await getDefaultTreasuryId(); // Assume this function exists
     const targetTreasuryId = saleData.paymentTreasuryId || defaultTreasuryId;
 
-    // Start transaction... (Conceptual)
-    console.log("Starting addSale transaction...");
-    try {
+    // Use transaction wrapper for atomic transaction (FR-001, FR-002, FR-003)
+    return await withTransaction(async (tx) => {
         // 1. Insert Sale Transaction
         console.log("Inserting Sale Transaction:", newSaleId);
         const saleQuery = `
@@ -1061,7 +1065,7 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
             sourceWarehouseId, // Store source warehouse
             targetTreasuryId, // Store payment treasury
         ];
-        await (await db).execute(saleQuery, saleParams);
+        await tx.execute(saleQuery, saleParams);
         console.log("Sale Transaction inserted.");
 
 
@@ -1070,7 +1074,7 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
         for (const item of saleData.items) {
              console.log(`Processing item: Product ID ${item.productId}, Qty: ${item.quantity} from Warehouse ${sourceWarehouseId}`);
              // Fetch product details (including cost) from the correct warehouse
-             const productResults = await (await db).select("SELECT * FROM Products WHERE id = ? AND warehouseId = ?", [item.productId, sourceWarehouseId]);
+             const productResults = await tx.execute("SELECT * FROM Products WHERE id = ? AND warehouseId = ?", [item.productId, sourceWarehouseId]);
              const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
 
              if (!product) {
@@ -1083,7 +1087,7 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
                  const costNum = item.soldUnitType === 'sub' && product.subUnitsPerUnit
                      ? lastPurchaseCostNum / product.subUnitsPerUnit
                      : lastPurchaseCostNum;
-                 costAtSale = formatNumberForDB(costNum);
+                 costAtSale = formatNumberForDB(costNum) || undefined;
              }
 
             const itemQuery = `
@@ -1100,7 +1104,7 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
                 sourceWarehouseId, // Store the warehouse the item came from
             ];
              console.log(`Inserting Sale Item: ${JSON.stringify(itemParams)}`);
-            await (await db).execute(itemQuery, itemParams);
+            await tx.execute(itemQuery, itemParams);
              console.log("Sale Item inserted.");
 
             // Update stock in the specific warehouse
@@ -1121,16 +1125,17 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
 
              const newStockLevel = currentStockNum - quantityToDeduct;
               console.log(`New Stock Level: ${newStockLevel}`);
-             const stockUpdateQuery = "UPDATE Products SET quantity = ? WHERE id = ? AND warehouseId = ?";
-             await (await db).execute(stockUpdateQuery, [formatNumberForDB(newStockLevel), item.productId, sourceWarehouseId]);
-              console.log("Stock updated.");
+            const stockUpdateQuery = "UPDATE Products SET quantity = ? WHERE id = ? AND warehouseId = ?";
+            await tx.execute(stockUpdateQuery, [formatNumberForDB(newStockLevel), item.productId, sourceWarehouseId]);
+             console.log("Stock updated.");
         }
          console.log("Sale items processed.");
 
         // 3. Update Customer Balance
         if (saleData.customerId) {
             console.log(`Updating balance for customer ${saleData.customerId}`);
-            const customer = await getCustomerById(saleData.customerId);
+            const customerResults = await tx.execute("SELECT * FROM Customers WHERE id = ?", [saleData.customerId]);
+            const customer = customerResults.length > 0 ? mapCustomerData(customerResults[0]) : undefined;
             if (customer && customer.balance !== undefined) {
                  const currentBalanceNum = parseFloatFromDB(customer.balance);
                  const amountDueNum = parseFloatFromDB(saleData.totalAmount);
@@ -1145,8 +1150,8 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
                  if (balanceChangeNum !== 0) {
                      const newBalanceNum = currentBalanceNum + balanceChangeNum;
                       console.log(`New Balance: ${newBalanceNum}`);
-                     const balanceUpdateQuery = "UPDATE Customers SET balance = ? WHERE id = ?";
-                     await (await db).execute(balanceUpdateQuery, [formatNumberForDB(newBalanceNum), saleData.customerId]);
+                    const balanceUpdateQuery = "UPDATE Customers SET balance = ? WHERE id = ?";
+                    await tx.execute(balanceUpdateQuery, [formatNumberForDB(newBalanceNum), saleData.customerId]);
                       console.log("Customer balance updated.");
                  }
             } else {
@@ -1171,19 +1176,35 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
 
         console.log("Added Sale (DB):", newSaleId);
         // Fetch the complete data again to return consistent mapped types
-        const finalSaleData = await getSaleById(newSaleId); // Fetch the newly created sale
+        const finalSaleData = await saleRepository.findByIdWithItems(newSaleId); // Fetch the newly created sale
         if (!finalSaleData) {
            throw new Error("Failed to fetch newly created sale data.");
         }
+        // Handle customerId type conversion (null to undefined) and items type conversion
+        const saleResult: SaleTransaction = {
+            id: finalSaleData.id,
+            customerId: finalSaleData.customerId || undefined,
+            totalAmount: formatNumberForDB(finalSaleData.totalAmount) || '0',
+            originalTotalAmount: formatNumberForDB(finalSaleData.originalTotalAmount) || '0',
+            subTotalAmount: formatNumberForDB(finalSaleData.subTotalAmount) || '0',
+            amountPaid: formatNumberForDB(finalSaleData.amountPaid) || '0',
+            paymentMethod: finalSaleData.paymentMethod as PaymentMethod, // Cast to PaymentMethod type
+            date: finalSaleData.date,
+            appliedInsuranceDiscountRate: formatNumberForDB(finalSaleData.appliedInsuranceDiscountRate) || '0',
+            saleWarehouseId: finalSaleData.saleWarehouseId,
+            paymentTreasuryId: finalSaleData.paymentTreasuryId,
+            items: finalSaleData.items.map(item => ({
+                ...item,
+                quantity: formatNumberForDB(item.quantity) || '0', // Convert number to string
+                price: formatNumberForDB(item.price) || '0', // Convert number to string
+                costAtSale: item.costAtSale !== undefined ? formatNumberForDB(item.costAtSale) || '0' : undefined,
+                soldUnitType: item.soldUnitType as 'main' | 'sub', // Cast to proper union type
+            })),
+        };
          console.log("addSale finished successfully.");
-        return finalSaleData;
+        return saleResult;
 
-    } catch (error) {
-        // Rollback transaction here... (Conceptual)
-        console.error("Error adding sale transaction:", error);
-        console.log("Rolling back addSale transaction...");
-        throw error;
-    }
+    });
 }
 
 
@@ -1568,8 +1589,8 @@ export async function updateTreasury(id: string, updates: Partial<Omit<Treasury,
         let dbValue = newValue;
 
         if (key === 'isDefault') {
-            dbValue = newValue ? 1 : 0;
-            originalValue = parseBooleanFromDB(originalValue) ? 1 : 0;
+            dbValue = newValue ? 1 : 0 as any;
+            originalValue = parseBooleanFromDB(originalValue) ? 1 : 0 as any;
         }
 
         if (dbValue !== originalValue) {
@@ -1923,20 +1944,31 @@ export async function updateTreasuryTransaction(id: string, updates: Partial<Tre
         let dbValue = newValue;
 
         if (typedKey === 'amount') {
-             dbValue = formatNumberForDB(newValue);
-             originalValue = formatNumberForDB(originalValue); // Compare strings
+             // Only format if it's a string or number, not Date
+             if (typeof newValue === 'string' || typeof newValue === 'number') {
+                 const formatted = formatNumberForDB(newValue);
+                 dbValue = formatted !== null ? formatted : newValue;
+                 const originalFormatted = formatNumberForDB(originalValue as string | undefined);
+                 originalValue = originalFormatted !== null ? originalFormatted : originalValue;
+             } else {
+                 dbValue = newValue;
+                 originalValue = originalValue;
+             }
         }
         if (typedKey === 'date') {
-             dbValue = formatDateTimeForDB(newValue as Date | undefined);
-             originalValue = formatDateTimeForDB(originalValue as Date | undefined);
+             const formatted = formatDateTimeForDB(newValue as Date | undefined);
+             dbValue = formatted !== null ? formatted : newValue;
+             const originalFormatted = formatDateTimeForDB(originalValue as Date | undefined);
+             originalValue = originalFormatted !== null ? originalFormatted : originalValue;
         }
         // Handle treasuryId like any other string field
 
          // Compare potentially formatted DB values
-        if (String(dbValue) !== String(originalValue)) {
-            changedUpdates[typedKey] = safeUpdates[typedKey]; // Store original type change
-            dbUpdates[typedKey] = dbValue; // Store DB-formatted value
-        }
+         if (String(dbValue) !== String(originalValue)) {
+             // Store original type change - cast to avoid type errors
+             (changedUpdates as any)[typedKey] = safeUpdates[typedKey];
+             dbUpdates[typedKey] = dbValue; // Store DB-formatted value
+         }
     }
 
 
