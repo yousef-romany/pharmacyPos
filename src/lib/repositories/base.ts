@@ -1,4 +1,4 @@
-import db from '../db';
+import { getDatabase } from '../db';
 import { executeWithTiming, executeWithTimingAndParams } from '../db/observability';
 
 /**
@@ -132,6 +132,7 @@ export abstract class BaseRepository<T, CreateDTO extends Record<string, any>, U
    * @returns Entity or null if not found
    */
   async findById(id: string): Promise<T | null> {
+    const db = await getDatabase();
     const sql = `SELECT * FROM ${this.tableName} WHERE id = ?`;
     
     try {
@@ -164,6 +165,7 @@ export abstract class BaseRepository<T, CreateDTO extends Record<string, any>, U
    * @returns Array of entities
    */
   async findAll(options: QueryOptions = {}): Promise<T[]> {
+    const db = await getDatabase();
     const { limit, offset, orderBy, orderDirection = 'ASC' } = options;
     
     let sql = `SELECT * FROM ${this.tableName}`;
@@ -209,6 +211,7 @@ export abstract class BaseRepository<T, CreateDTO extends Record<string, any>, U
    * @returns Created entity
    */
   async create(data: CreateDTO): Promise<T> {
+    const db = await getDatabase();
     const columns = Object.keys(data).join(', ');
     const placeholders = Object.keys(data).map(() => '?').join(', ');
     const values = Object.values(data);
@@ -247,6 +250,7 @@ export abstract class BaseRepository<T, CreateDTO extends Record<string, any>, U
    * @throws ConcurrencyError if version mismatch
    */
   async update(id: string, version: number, data: UpdateDTO): Promise<T> {
+    const db = await getDatabase();
     const updates = Object.keys(data).map(key => `${key} = ?`).join(', ');
     const values = [...Object.values(data), version, id];
     const sql = `UPDATE ${this.tableName} SET ${updates}, version = version + 1 WHERE id = ? AND version = ?`;
@@ -296,6 +300,7 @@ export abstract class BaseRepository<T, CreateDTO extends Record<string, any>, U
    * @param id - Entity ID
    */
   async delete(id: string): Promise<void> {
+    const db = await getDatabase();
     const sql = `DELETE FROM ${this.tableName} WHERE id = ?`;
 
     try {
@@ -317,10 +322,11 @@ export abstract class BaseRepository<T, CreateDTO extends Record<string, any>, U
 
   /**
    * Count entities
-   * 
+   *
    * @returns Number of entities
    */
   async count(): Promise<number> {
+    const db = await getDatabase();
     const sql = `SELECT COUNT(*) as count FROM ${this.tableName}`;
 
     try {

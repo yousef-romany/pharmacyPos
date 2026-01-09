@@ -1,4 +1,4 @@
-import db from '../db';
+import { getDatabase } from '../db';
 
 /**
  * Connection pool statistics (FR-004b)
@@ -94,6 +94,7 @@ export class MySQLConnectionPool implements ConnectionPool {
     // For now, return placeholder values
     try {
       // Try to get connection count from MySQL
+      const db = await getDatabase();
       const result = await db.execute('SHOW STATUS LIKE "Threads_connected"');
       if (result && result.length > 0) {
         const threadsConnected = parseInt(result[0].Value) || 0;
@@ -125,6 +126,7 @@ export class MySQLConnectionPool implements ConnectionPool {
   async isHealthy(): Promise<boolean> {
     try {
       // Simple health check: execute a query
+      const db = await getDatabase();
       await db.execute('SELECT 1');
       return true;
     } catch (error) {

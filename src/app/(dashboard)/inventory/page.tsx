@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/table';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Archive, Package, AlertCircle, CalendarX, CalendarClock, DollarSign, Filter, Printer, Warehouse as WarehouseIcon, PlusCircle, Edit, Trash2 } from 'lucide-react'; // Kept WarehouseIcon
-import { getInventoryReportData, calculateDaysUntilExpiry, getWarehouses, addWarehouse, updateWarehouse, deleteWarehouse } from '@/lib/data'; // Removed Treasury functions
+import { getInventoryReportData, calculateDaysUntilExpiry, getWarehouses, addWarehouse, updateWarehouse, deleteWarehouse, getProducts } from '@/lib/data'; // Removed Treasury functions
 import type { InventoryReportItem, ProductExpiryInfo, Product, Warehouse } from '@/lib/types'; // Kept Warehouse
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';

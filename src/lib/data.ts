@@ -1,11 +1,24 @@
 import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User, ProductExpiryInfo, InventoryReportItem, PaymentMethod, PaymentStatus, UserRole, TreasuryTransaction, TreasuryTransactionType, Warehouse, Treasury } from '@/lib/types'; // Added Treasury type
 import { Pill, Baby, SprayCan, Activity, LucideIcon } from 'lucide-react';
 import { differenceInDays, addDays, isBefore, isSameDay, startOfDay, endOfDay, format as formatDate } from 'date-fns'; // Import format from date-fns
-import db from '@/lib/db'; // Import the potentially initialized database instance
+import { getDatabase } from '@/lib/db'; // Import potentially initialized database instance
 import { withTransaction } from './db/transaction';
 import { saleRepository } from './repositories/sales';
 
 // --- Helper Functions ---
+
+/**
+ * Get database instance with error handling
+ * Helper to simplify database access throughout the file
+ */
+async function getDB() {
+    try {
+        return await getDatabase();
+    } catch (error) {
+        console.error("Database not available:", error);
+        throw new Error("Database not available");
+    }
+}
 
 // Helper function to format Date object to 'YYYY-MM-DD' string for DB DATE columns
 const formatDateForDB = (date: Date | string | undefined | null): string | null => {
@@ -33,7 +46,7 @@ const formatDateTimeForDB = (date: Date | string | undefined | null): string | n
     if (!date) return null;
     try {
         // If it's already a string in the correct format, return it (less likely for datetime)
-        if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(date)) {
+        if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(date)) {
             return date;
         }
         const d = new Date(date);
@@ -132,6 +145,34 @@ function getIconName(IconComponent?: React.ComponentType<any> | LucideIcon): str
     return (IconComponent as any).displayName || (IconComponent as any).name || undefined;
 }
 
+// SELECT queries with DECIMAL columns cast to CHAR for tauri-plugin-sql compatibility
+const PRODUCTS_SELECT_FIELDS = `
+    id, nameAr, nameEn, manufacturer, concentration, activeIngredient,
+    CAST(price AS CHAR) as price,
+    CAST(cost AS CHAR) as cost,
+    CAST(lastPurchaseCost AS CHAR) as lastPurchaseCost,
+    CAST(quantity AS CHAR) as quantity,
+    categoryIcon, barcode, unitType, subUnitType, subUnitsPerUnit,
+    CAST(discountRate AS CHAR) as discountRate,
+    expiryDate, minStockLevel, warehouseId, createdAt, updatedAt, version
+`;
+
+const CUSTOMERS_SELECT_FIELDS = `
+    id, name, phone, email, address,
+    CAST(balance AS CHAR) as balance,
+    insuranceCompany, policyNumber,
+    CAST(insuranceDiscountRate AS CHAR) as insuranceDiscountRate,
+    createdAt, updatedAt
+`;
+
+const SUPPLIERS_SELECT_FIELDS = `
+    id, name, contactPerson, phone, email, address,
+    CAST(balance AS CHAR) as balance,
+    createdAt, updatedAt
+`;
+
+const WAREHOUSES_SELECT_FIELDS = `id, name, location, isDefault, createdAt, updatedAt`;
+
 // Map raw product data from DB to Product type, handling type conversions
 const mapProductData = (product: any): Product => ({
     ...product,
@@ -197,9 +238,9 @@ const mapTreasuryTransactionData = (tx: any): TreasuryTransaction => ({
 
 // --- Warehouse Operations (Physical Product Storage) ---
 export async function getWarehouses(): Promise<Warehouse[]> {
-    if (!db) { console.error("DB not available in getWarehouses"); return []; }
+    const db = await getDB();
     try {
-        const results = await (await db).select("SELECT * FROM Warehouses", []);
+        const results = await db.select(`SELECT ${WAREHOUSES_SELECT_FIELDS} FROM Warehouses`, []);
         return (results as any[]).map(mapWarehouseData);
     } catch (error) {
         console.error("Error fetching warehouses:", error);
@@ -208,12 +249,12 @@ export async function getWarehouses(): Promise<Warehouse[]> {
 }
 
 export async function addWarehouse(warehouseData: Omit<Warehouse, 'id'>): Promise<Warehouse> {
-    if (!db) { throw new Error("DB not available in addWarehouse"); }
+    const db = await getDB();
     const newId = `wh-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
 
     // Ensure only one default warehouse if isDefault is true
     if (warehouseData.isDefault) {
-        await (await db).execute("UPDATE Warehouses SET isDefault = 0 WHERE isDefault = 1", []);
+        await db.execute("UPDATE Warehouses SET isDefault = 0 WHERE isDefault = 1", []);
     }
 
     const query = `
@@ -227,7 +268,7 @@ export async function addWarehouse(warehouseData: Omit<Warehouse, 'id'>): Promis
         warehouseData.isDefault ? 1 : 0, // Store boolean as 1 or 0
     ];
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         const newWarehouse = { ...warehouseData, id: newId };
         console.log("Added Warehouse (DB):", newWarehouse);
         return newWarehouse;
@@ -238,15 +279,14 @@ export async function addWarehouse(warehouseData: Omit<Warehouse, 'id'>): Promis
 }
 
 export async function updateWarehouse(id: string, updates: Partial<Omit<Warehouse, 'id'>>): Promise<Warehouse | null> {
-    if (!db) { throw new Error("DB not available in updateWarehouse"); }
-    const currentWarehouseResult = await (await db).select("SELECT * FROM Warehouses WHERE id = ?", [id]);
+    const db = await getDB();
+    const currentWarehouseResult = await db.select("SELECT * FROM Warehouses WHERE id = ?", [id]);
     if (!currentWarehouseResult || currentWarehouseResult.length === 0) return null;
     const currentWarehouse = currentWarehouseResult[0];
 
-
     // Ensure only one default warehouse if isDefault is being set to true
     if (updates.isDefault === true && !parseBooleanFromDB(currentWarehouse.isDefault)) {
-        await (await db).execute("UPDATE Warehouses SET isDefault = 0 WHERE isDefault = 1", []);
+        await db.execute("UPDATE Warehouses SET isDefault = 0 WHERE isDefault = 1", []);
     }
 
     const updateKeys = Object.keys(updates) as (keyof typeof updates)[];
@@ -275,7 +315,7 @@ export async function updateWarehouse(id: string, updates: Partial<Omit<Warehous
     params.push(id);
 
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         const updatedWarehouse = { ...mapWarehouseData(currentWarehouse), ...updates };
         console.log("Updated Warehouse (DB):", updatedWarehouse);
         return updatedWarehouse;
@@ -286,14 +326,14 @@ export async function updateWarehouse(id: string, updates: Partial<Omit<Warehous
 }
 
 export async function deleteWarehouse(id: string): Promise<boolean> {
-    if (!db) { throw new Error("DB not available in deleteWarehouse"); }
+    const db = await getDB();
     // Dependency Check: Ensure warehouse is empty before deleting
-    const productCheck = await (await db).select("SELECT 1 FROM Products WHERE warehouseId = ? LIMIT 1", [id]);
+    const productCheck = await db.select("SELECT 1 FROM Products WHERE warehouseId = ? LIMIT 1", [id]);
     if (productCheck && productCheck.length > 0) {
         throw new Error(`لا يمكن حذف المخزن لأنه يحتوي على منتجات.`);
     }
-    // Check if it's the default warehouse (prevent deletion?)
-    const warehouseResult = await (await db).select("SELECT isDefault FROM Warehouses WHERE id = ?", [id]);
+    // Check if it's default warehouse (prevent deletion?)
+    const warehouseResult = await db.select("SELECT isDefault FROM Warehouses WHERE id = ?", [id]);
     const warehouse = warehouseResult?.[0];
     if (warehouse && parseBooleanFromDB(warehouse.isDefault)) {
          throw new Error(`لا يمكن حذف المخزن الافتراضي.`);
@@ -302,7 +342,7 @@ export async function deleteWarehouse(id: string): Promise<boolean> {
 
     const query = "DELETE FROM Warehouses WHERE id = ?";
     try {
-        const result = await (await db).execute(query, [id]);
+        const result = await db.execute(query, [id]);
         console.log(`Attempted deletion of Warehouse ${id} (DB)`);
         // Assume success if no error
         return result.affectedRows > 0; // Check affected rows for confirmation
@@ -313,16 +353,16 @@ export async function deleteWarehouse(id: string): Promise<boolean> {
 }
 
 export async function getDefaultWarehouseId(): Promise<string | undefined> {
-    if (!db) { console.error("DB not available in getDefaultWarehouseId"); return undefined; }
+    const db = await getDB();
     try {
-        const results = await (await db).select("SELECT id FROM Warehouses WHERE isDefault = 1 LIMIT 1", []);
+        const results = await db.select("SELECT id FROM Warehouses WHERE isDefault = 1 LIMIT 1", []);
         if (results && results.length > 0) {
             return results[0].id as string;
         }
-        // Fallback: If no default, return the first warehouse found
-        const firstWarehouse = await (await db).select("SELECT id FROM Warehouses LIMIT 1", []);
+        // Fallback: If no default, return first warehouse found
+        const firstWarehouse = await db.select("SELECT id FROM Warehouses LIMIT 1", []);
         if (firstWarehouse && firstWarehouse.length > 0) {
-            console.warn("No default warehouse set, using the first available warehouse.");
+            console.warn("No default warehouse set, using first available warehouse.");
             return firstWarehouse[0].id as string;
         }
         return undefined; // No warehouses exist
@@ -334,15 +374,15 @@ export async function getDefaultWarehouseId(): Promise<string | undefined> {
 
 // --- Product Data Operations (Linked to Physical Warehouses) ---
 export async function getProducts(warehouseId?: string): Promise<Product[]> {
-    if (!db) { console.error("DB not available in getProducts"); return []; }
+    const db = await getDB();
     try {
-        let query = "SELECT * FROM Products";
+        let query = `SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products`;
         const params: any[] = [];
         if (warehouseId) {
             query += " WHERE warehouseId = ?";
             params.push(warehouseId);
         }
-        const results = await (await db).select(query, params);
+        const results = await db.select(query, params);
         return (results as any[]).map(mapProductData);
     } catch (error) {
         console.error("Error fetching products:", error);
@@ -351,9 +391,9 @@ export async function getProducts(warehouseId?: string): Promise<Product[]> {
 }
 
 export async function getProductById(id: string, warehouseId?: string): Promise<Product | undefined> {
-    if (!db) { console.error("DB not available in getProductById"); return undefined; }
+    const db = await getDB();
     try {
-        let query = "SELECT * FROM Products WHERE id = ?";
+        let query = `SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products WHERE id = ?`;
         const params: any[] = [id];
         if (warehouseId) {
             query += " AND warehouseId = ?";
@@ -361,7 +401,7 @@ export async function getProductById(id: string, warehouseId?: string): Promise<
         }
         query += " LIMIT 1"; // Ensure only one result
 
-        const results = await (await db).select(query, params);
+        const results = await db.select(query, params);
         if (results && results.length > 0) {
             return mapProductData(results[0]);
         }
@@ -373,11 +413,11 @@ export async function getProductById(id: string, warehouseId?: string): Promise<
 }
 
 export async function getProductByBarcode(barcode: string): Promise<Product | undefined> {
-    if (!db) { console.error("DB not available in getProductByBarcode"); return undefined; }
-     try {
-        const results = await (await db).select("SELECT * FROM Products WHERE barcode = ?", [barcode]);
+    const db = await getDB();
+    try {
+        const results = await db.select(`SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products WHERE barcode = ?`, [barcode]);
         if (results && results.length > 0) {
-            // Consider how to handle multiple products with the same barcode across different warehouses
+            // Consider how to handle multiple products with same barcode across different warehouses
             return mapProductData(results[0]);
         }
         return undefined;
@@ -388,7 +428,7 @@ export async function getProductByBarcode(barcode: string): Promise<Product | un
 }
 
 export async function addProduct(productData: Omit<Product, 'id'>): Promise<Product> {
-    if (!db) { throw new Error("DB not available in addProduct"); }
+    const db = await getDB();
     const newId = `prod-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
 
     // Ensure warehouseId is set, use default if not provided
@@ -402,7 +442,7 @@ export async function addProduct(productData: Omit<Product, 'id'>): Promise<Prod
             id, nameAr, nameEn, manufacturer, concentration, activeIngredient, price,
             lastPurchaseCost, quantity, categoryIcon, barcode, unitType, subUnitType,
             subUnitsPerUnit, discountRate, expiryDate, minStockLevel, warehouseId
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     // Convert numbers to strings for DB insertion
     const params = [
@@ -426,10 +466,10 @@ export async function addProduct(productData: Omit<Product, 'id'>): Promise<Prod
         targetWarehouseId, // Add warehouseId
     ];
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         const newProduct = { ...productData, id: newId, warehouseId: targetWarehouseId };
         console.log("Added Product (DB):", newProduct);
-        // Return the mapped product (data might still be stringified number)
+        // Return mapped product (data might still be stringified number)
         return mapProductData(newProduct);
     } catch (error) {
         console.error("Error adding product:", error);
@@ -438,7 +478,7 @@ export async function addProduct(productData: Omit<Product, 'id'>): Promise<Prod
 }
 
 export async function updateProduct(id: string, updates: Partial<Omit<Product, 'id'>>): Promise<Product | null> {
-     if (!db) { throw new Error("DB not available in updateProduct"); }
+    const db = await getDB();
     const currentProduct = await getProductById(id); // Fetches product, potentially ignoring warehouse for update context
     if (!currentProduct) return null;
 
@@ -453,7 +493,7 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
         let originalValue = currentProduct[key]; // Get original value (could be string)
         let dbValue: any = newValue; // Value to be sent to DB
 
-        // Convert numbers to strings for DB update if the key requires it
+        // Convert numbers to strings for DB update if key requires it
         if (key === 'quantity' || key === 'price' || key === 'lastPurchaseCost' || key === 'discountRate') {
             const formattedNewValue = formatNumberForDB(newValue as string | number | undefined);
             const formattedOriginalValue = formatNumberForDB(originalValue as string | number | undefined);
@@ -480,7 +520,7 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
         if (key === 'categoryIcon') dbValue = getIconName(newValue as LucideIcon);
         // Note: warehouseId updates are handled like other fields if included in `updates`
 
-        // Only add to update if the DB value has actually changed
+        // Only add to update if DB value has actually changed
         if (String(dbValue) !== String(originalValue)) { // Robust comparison
             (updatedFields as any)[key] = updates[key]; // Keep original type from updates object
             setClause.push(`${key} = ?`);
@@ -488,22 +528,21 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
         }
     }
 
-
     if (setClause.length === 0) {
         // No changes detected for DB update
         return currentProduct;
     }
 
     // Construct WHERE clause - Update only the specific product instance
-    // If warehouseId is part of the update, it will be in the SET clause
+    // If warehouseId is part of update, it will be in the SET clause
     // The WHERE clause should ideally target the specific product ID.
-    // If you need to update across warehouses, the logic needs adjustment.
+    // If you need to update across warehouses, logic needs adjustment.
     const query = `UPDATE Products SET ${setClause.join(', ')} WHERE id = ?`;
     params.push(id);
 
     try {
-        await (await db).execute(query, params);
-        // Fetch the product again after update to get the latest state
+        await db.execute(query, params);
+        // Fetch product again after update to get the latest state
         const resultProduct = await getProductById(id, updates.warehouseId || currentProduct.warehouseId);
         console.log("Updated Product (DB):", resultProduct);
         return resultProduct || null; // Return fetched product or null if not found after update
@@ -514,20 +553,20 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
 }
 
 export async function deleteProduct(id: string): Promise<boolean> {
-    if (!db) { throw new Error("DB not available in deleteProduct"); }
+    const db = await getDB();
     // Dependency Check
-    const salesCheck = await (await db).select("SELECT 1 FROM SaleTransactionItems WHERE productId = ? LIMIT 1", [id]);
+    const salesCheck = await db.select("SELECT 1 FROM SaleTransactionItems WHERE productId = ? LIMIT 1", [id]);
     if (salesCheck && salesCheck.length > 0) {
         throw new Error(`لا يمكن حذف المنتج لأنه مرتبط بفواتير بيع.`);
     }
-    const purchasesCheck = await (await db).select("SELECT 1 FROM PurchaseTransactionItems WHERE productId = ? LIMIT 1", [id]);
+    const purchasesCheck = await db.select("SELECT 1 FROM PurchaseTransactionItems WHERE productId = ? LIMIT 1", [id]);
     if (purchasesCheck && purchasesCheck.length > 0) {
         throw new Error(`لا يمكن حذف المنتج لأنه مرتبط بفواتير شراء.`);
     }
 
     const query = "DELETE FROM Products WHERE id = ?";
     try {
-        const result = await (await db).execute(query, [id]);
+        const result = await db.execute(query, [id]);
         const success = result.affectedRows > 0;
         console.log(`Deleted Product ${id}? (DB)`, success);
         return success;
@@ -540,9 +579,9 @@ export async function deleteProduct(id: string): Promise<boolean> {
 
 // --- Purchase Transaction Operations (Stock goes into a Warehouse) ---
 async function getPurchaseItems(purchaseId: string): Promise<PurchaseTransactionItem[]> {
-    if (!db) { console.error("DB not available in getPurchaseItems"); return []; }
+    const db = await getDB();
     try {
-        const results = await (await db).select("SELECT * FROM PurchaseTransactionItems WHERE purchaseId = ?", [purchaseId]);
+        const results = await db.select("SELECT purchaseId, productId, CAST(quantity AS CHAR) as quantity, CAST(cost AS CHAR) as cost, expiryDate FROM PurchaseTransactionItems WHERE purchaseId = ?", [purchaseId]);
         return results.map((item: any) => ({
             ...item,
             // Keep quantity and cost as strings
@@ -555,9 +594,9 @@ async function getPurchaseItems(purchaseId: string): Promise<PurchaseTransaction
 }
 
 export async function getPurchases(): Promise<PurchaseTransaction[]> {
-    if (!db) { console.error("DB not available in getPurchases"); return []; }
+    const db = await getDB();
     try {
-        const purchaseResults = await (await db).select("SELECT * FROM PurchaseTransactions ORDER BY date DESC", []);
+        const purchaseResults = await db.select("SELECT id, supplierId, CAST(totalAmount AS CHAR) as totalAmount, paymentStatus, CAST(amountPaid AS CHAR) as amountPaid, date, invoiceNumber, destinationWarehouseId, paymentTreasuryId FROM PurchaseTransactions ORDER BY date DESC", []);
         const purchases = (purchaseResults as any[]).map(mapPurchaseData);
         for (const purchase of purchases) {
             purchase.items = await getPurchaseItems(purchase.id); // Make sure getPurchaseItems exists
@@ -570,9 +609,9 @@ export async function getPurchases(): Promise<PurchaseTransaction[]> {
 }
 
 export async function getPurchaseById(id: string): Promise<PurchaseTransaction | undefined> {
-    if (!db) { console.error("DB not available in getPurchaseById"); return undefined; }
+    const db = await getDB();
     try {
-        const results = await (await db).select("SELECT * FROM PurchaseTransactions WHERE id = ?", [id]);
+        const results = await db.select("SELECT id, supplierId, CAST(totalAmount AS CHAR) as totalAmount, paymentStatus, CAST(amountPaid AS CHAR) as amountPaid, date, invoiceNumber, destinationWarehouseId, paymentTreasuryId FROM PurchaseTransactions WHERE id = ?", [id]);
         if (results && results.length > 0) {
             const purchase = mapPurchaseData(results[0]);
             purchase.items = await getPurchaseItems(purchase.id); // Fetch items
@@ -586,10 +625,10 @@ export async function getPurchaseById(id: string): Promise<PurchaseTransaction |
 }
 
 export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' | 'totalAmount' | 'paymentStatus'>): Promise<PurchaseTransaction> {
-    if (!db) { throw new Error("DB not available in addPurchase"); }
+    const db = await getDB();
     const newPurchaseId = `pur-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
 
-    // Determine target warehouse for the purchase
+    // Determine target warehouse for purchase
     const targetWarehouseId = purchaseData.destinationWarehouseId || await getDefaultWarehouseId(); // Use destination or default
     if (!targetWarehouseId) {
         throw new Error("لا يوجد مخزن افتراضي أو محدد لاستلام المشتريات.");
@@ -610,7 +649,7 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' |
         paymentStatus = 'partial';
     }
 
-    // Determine the target Treasury for the payment
+    // Determine target Treasury for payment
      const defaultTreasuryId = await getDefaultTreasuryId(); // Assume this function exists or create it
      const targetTreasuryId = purchaseData.paymentTreasuryId || defaultTreasuryId; // Allow specifying payment source
 
@@ -619,9 +658,9 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' |
          console.log("Inserting Purchase Transaction:", newPurchaseId);
         const purchaseQuery = `
            INSERT INTO PurchaseTransactions (
-               id, supplierId, totalAmount, paymentStatus, amountPaid, date, invoiceNumber, destinationWarehouseId, paymentTreasuryId
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-       `;
+                id, supplierId, totalAmount, paymentStatus, amountPaid, date, invoiceNumber, destinationWarehouseId, paymentTreasuryId
+           ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `;
         const purchaseParams = [
            newPurchaseId,
            purchaseData.supplierId,
@@ -632,128 +671,130 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' |
            purchaseData.invoiceNumber,
            targetWarehouseId, // Store destination warehouse
            targetTreasuryId, // Store payment treasury
-       ];
+        ];
         await tx.execute(purchaseQuery, purchaseParams);
          console.log("Purchase Transaction inserted.");
 
 
          console.log("Processing purchase items...");
         for (const item of purchaseData.items) {
-             console.log(`Processing item: Product ID ${item.productId}, Qty: ${item.quantity}, Cost: ${item.cost}, Expiry: ${item.expiryDate}`);
-           const itemQuery = `
-               INSERT INTO PurchaseTransactionItems (purchaseId, productId, quantity, cost, expiryDate)
-               VALUES (?, ?, ?, ?, ?)
-           `;
-           const formattedExpiry = formatDateForDB(item.expiryDate); // Use DATE format for expiry
-           const itemParams = [
-               newPurchaseId,
-               item.productId,
-               formatNumberForDB(item.quantity), // Format number to string
-               formatNumberForDB(item.cost), // Format number to string
-               formattedExpiry
-           ];
-             console.log(`Inserting Purchase Item: ${JSON.stringify(itemParams)}`);
-           await tx.execute(itemQuery, itemParams);
-             console.log("Purchase Item inserted.");
+              console.log(`Processing item: Product ID ${item.productId}, Qty: ${item.quantity}, Cost: ${item.cost}, Expiry: ${item.expiryDate}`);
+            const itemQuery = `
+                INSERT INTO PurchaseTransactionItems (purchaseId, productId, quantity, cost, expiryDate)
+                VALUES (?, ?, ?, ?)
+            `;
+            const formattedExpiry = formatDateForDB(item.expiryDate); // Use DATE format for expiry
+            const itemParams = [
+                newPurchaseId,
+                item.productId,
+                formatNumberForDB(item.quantity), // Format number to string
+                formatNumberForDB(item.cost), // Format number to string
+                formattedExpiry
+            ];
+              console.log(`Inserting Purchase Item: ${JSON.stringify(itemParams)}`);
+            await tx.execute(itemQuery, itemParams);
+              console.log("Purchase Item inserted.");
 
+            // Update product stock, last cost, expiry (Requires parsing)
+             console.log(`Updating stock/cost/expiry for product ${item.productId} in warehouse ${targetWarehouseId}`);
+               // Find product specifically in the target warehouse
+               const productResults = await tx.execute(`SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products WHERE id = ? AND warehouseId = ?`, [item.productId, targetWarehouseId]);
+               const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
 
-           // Update product stock, last cost, expiry (Requires parsing)
-            console.log(`Updating stock/cost/expiry for product ${item.productId} in warehouse ${targetWarehouseId}`);
-              // Find product specifically in the target warehouse
-              const productResults = await tx.execute("SELECT * FROM Products WHERE id = ? AND warehouseId = ?", [item.productId, targetWarehouseId]);
-              const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
+               if (product) {
+                const currentStockNum = parseFloatFromDB(product.quantity);
+                const quantityAddedNum = parseFloatFromDB(item.quantity);
+                const newStockLevelNum = currentStockNum + quantityAddedNum;
+                const purchaseCostNum = parseFloatFromDB(item.cost);
+                 console.log(`Current Stock: ${currentStockNum}, Qty Added: ${quantityAddedNum}, New Stock: ${newStockLevelNum}, Purchase Cost: ${purchaseCostNum}`);
 
-           if (product) {
-               const currentStockNum = parseFloatFromDB(product.quantity);
-               const quantityAddedNum = parseFloatFromDB(item.quantity);
-               const newStockLevelNum = currentStockNum + quantityAddedNum;
-               const purchaseCostNum = parseFloatFromDB(item.cost);
-                console.log(`Current Stock: ${currentStockNum}, Qty Added: ${quantityAddedNum}, New Stock: ${newStockLevelNum}, Purchase Cost: ${purchaseCostNum}`);
+               // Only update expiry if new purchase expiry is provided
+                let expiryUpdateClause = "";
+                let expiryParams = [];
+                if (formattedExpiry) {
+                     expiryUpdateClause = ", expiryDate = ?";
+                     expiryParams.push(formattedExpiry);
+                     console.log(`Updating expiry date to: ${formattedExpiry}`);
+                } else {
+                     console.log("No expiry date provided for this purchase item, product expiry remains unchanged.");
+                }
 
-
-              // Only update expiry if the new purchase expiry is provided
-              let expiryUpdateClause = "";
-              let expiryParams = [];
-              if (formattedExpiry) {
-                   expiryUpdateClause = ", expiryDate = ?";
-                   expiryParams.push(formattedExpiry);
-                   console.log(`Updating expiry date to: ${formattedExpiry}`);
-              } else {
-                   console.log("No expiry date provided for this purchase item, product expiry remains unchanged.");
-              }
-
-
-              const stockUpdateQuery = `
-                   UPDATE Products
-                   SET quantity = ?, lastPurchaseCost = ? ${expiryUpdateClause}
-                   WHERE id = ? AND warehouseId = ?
-               `;
-               const updateParams = [
-                   formatNumberForDB(newStockLevelNum), // Format new stock as string
-                   formatNumberForDB(purchaseCostNum), // Format cost as string
-                   ...expiryParams, // Spread the expiry parameter(s) if any
-                   item.productId,
-                   targetWarehouseId // Ensure update happens in the correct warehouse
-               ];
-                console.log(`Executing stock update query with params: ${JSON.stringify(updateParams)}`);
-               await tx.execute(stockUpdateQuery, updateParams);
-                console.log("Stock/cost/expiry updated.");
-           } else {
-               // Product doesn't exist in this warehouse, add it automatically?
-                console.warn(`Product ${item.productId} not found in warehouse ${targetWarehouseId}. Automatically adding...`);
-                // Create a basic product entry in the target warehouse
-                const newProductData: Omit<Product, 'id'> = {
-                    nameAr: 'منتج جديد تلقائي', // Placeholder name, consider fetching from another warehouse or requiring manual entry
-                    nameEn: 'Auto-added product',
-                    price: '0', // Placeholder price
-                    lastPurchaseCost: formatNumberForDB(item.cost) || undefined,
-                    quantity: formatNumberForDB(item.quantity) || '0',
-                    unitType: 'وحدة', // Placeholder unit type
-                    warehouseId: targetWarehouseId,
-                    expiryDate: item.expiryDate, // Pass expiry if available
-                };
-                await addProduct(newProductData); // Add the product
-                console.log(`Product ${item.productId} added to warehouse ${targetWarehouseId}.`);
-           }
-       }
+                const stockUpdateQuery = `
+                     UPDATE Products
+                     SET quantity = ?, lastPurchaseCost = ? ${expiryUpdateClause}
+                     WHERE id = ? AND warehouseId = ?
+                `;
+                const updateParams = [
+                     formatNumberForDB(newStockLevelNum), // Format new stock as string
+                     formatNumberForDB(purchaseCostNum), // Format cost as string
+                     ...expiryParams, // Spread expiry parameter(s) if any
+                     item.productId,
+                     targetWarehouseId // Ensure update happens in the correct warehouse
+                ];
+                 console.log(`Executing stock update query with params: ${JSON.stringify(updateParams)}`);
+                await tx.execute(stockUpdateQuery, updateParams);
+                 console.log("Stock/cost/expiry updated.");
+            } else {
+                // Product doesn't exist in this warehouse, add it automatically?
+                 console.warn(`Product ${item.productId} not found in warehouse ${targetWarehouseId}. Automatically adding...`);
+                  // Create a basic product entry in the target warehouse
+                  const newProductData: Omit<Product, 'id'> = {
+                      nameAr: 'منتج جديد تلقائي', // Placeholder name, consider fetching from another warehouse or requiring manual entry
+                      nameEn: 'Auto-added product',
+                      price: '0', // Placeholder price
+                      lastPurchaseCost: formatNumberForDB(item.cost) || undefined,
+                      quantity: formatNumberForDB(item.quantity) || '0',
+                      unitType: 'وحدة', // Placeholder unit type
+                      warehouseId: targetWarehouseId,
+                      expiryDate: item.expiryDate, // Pass expiry if available
+                  };
+                  await addProduct(newProductData); // Add the product
+                  console.log(`Product ${item.productId} added to warehouse ${targetWarehouseId}.`);
+            }
+        }
 
          // 4. Add Treasury Transaction for the payment made from the correct treasury
-         if (amountPaidNum > 0) {
-            await addTreasuryTransaction({
-                type: 'purchase_payment',
-                amount: formatNumberForDB(-amountPaidNum)!, // Pass as string, ensure it's negative
-                date: purchaseData.date, // Use the same date as the purchase
-                description: `دفعة لمورد ${purchaseData.supplierId} - فاتورة ${newPurchaseId}`,
-                relatedDocumentId: newPurchaseId,
-                treasuryId: targetTreasuryId, // Associate with the paying treasury
-            });
-         }
+          if (amountPaidNum > 0) {
+             await addTreasuryTransaction({
+                 type: 'purchase_payment',
+                 amount: formatNumberForDB(-amountPaidNum)!, // Pass as string, ensure it's negative
+                 date: purchaseData.date, // Use the same date as the purchase
+                 description: `دفعة لمورد ${purchaseData.supplierId} - فاتورة ${newPurchaseId}`,
+                 relatedDocumentId: newPurchaseId,
+                 treasuryId: targetTreasuryId, // Associate with the paying treasury
+             });
+          }
 
-        // Commit transaction... (Conceptual)
+         // Commit transaction... (Conceptual)
          console.log("Committing addPurchase transaction...");
 
 
         console.log("Added Purchase (DB):", newPurchaseId);
          // Return data consistent with DB (strings for numbers)
-        const finalPurchaseData = await getPurchaseById(newPurchaseId);
+         const finalPurchaseData = await getPurchaseById(newPurchaseId);
          if (!finalPurchaseData) {
-            throw new Error("Failed to fetch newly created purchase data.");
+             throw new Error("Failed to fetch newly created purchase data.");
          }
          console.log("addPurchase finished successfully.");
-        return finalPurchaseData; // Cast needed
+         return finalPurchaseData; // Cast needed
     });
 }
 
 // --- Inventory Report (Linked to Physical Warehouses) ---
 export async function getInventoryReportData(warehouseId?: string): Promise<InventoryReportItem[]> {
-    if (!db) { console.error("DB not available in getInventoryReportData"); return []; }
+    const db = await getDB();
     // Fetch warehouses to map names
     const warehouses = await getWarehouses();
     const warehouseMap = new Map(warehouses.map(w => [w.id, w.name]));
 
     let query = `
         SELECT
-            p.id, p.nameAr, p.nameEn, p.barcode, p.quantity, p.price, p.expiryDate, p.unitType, p.lastPurchaseCost, p.warehouseId
+            p.id, p.nameAr, p.nameEn, p.barcode,
+            CAST(p.quantity AS CHAR) as quantity,
+            CAST(p.price AS CHAR) as price,
+            p.expiryDate, p.unitType,
+            CAST(p.lastPurchaseCost AS CHAR) as lastPurchaseCost,
+            p.warehouseId
         FROM Products p
     `;
     const params: any[] = [];
@@ -763,7 +804,7 @@ export async function getInventoryReportData(warehouseId?: string): Promise<Inve
     }
 
     try {
-        const results = await (await db).select(query, params);
+        const results = await db.select(query, params);
         return (results as any[]).map(item => {
             const quantityNum = parseFloatFromDB(item.quantity);
             const costNum = parseFloatFromDB(item.lastPurchaseCost, 0);
@@ -785,9 +826,9 @@ export async function getInventoryReportData(warehouseId?: string): Promise<Inve
 
 // --- Supplier Data Operations ---
 export async function getSuppliers(): Promise<Supplier[]> {
-    if (!db) { console.error("DB not available in getSuppliers"); return []; }
+    const db = await getDB();
     try {
-        const results = await (await db).select("SELECT * FROM Suppliers", []);
+        const results = await db.select(`SELECT ${SUPPLIERS_SELECT_FIELDS} FROM Suppliers`, []);
         return results as Supplier[];
     } catch (error) {
         console.error("Error fetching suppliers:", error);
@@ -796,7 +837,7 @@ export async function getSuppliers(): Promise<Supplier[]> {
 }
 
 export async function addSupplier(supplierData: Omit<Supplier, 'id'>): Promise<Supplier> {
-    if (!db) { throw new Error("DB not available in addSupplier"); }
+    const db = await getDB();
     const newId = `supp-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
     const query = `
         INSERT INTO Suppliers (id, name, contactPerson, phone, email, address)
@@ -811,7 +852,7 @@ export async function addSupplier(supplierData: Omit<Supplier, 'id'>): Promise<S
         supplierData.address,
     ];
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         const newSupplier = { ...supplierData, id: newId };
         console.log("Added Supplier (DB):", newSupplier);
         return newSupplier;
@@ -822,14 +863,14 @@ export async function addSupplier(supplierData: Omit<Supplier, 'id'>): Promise<S
 }
 
 export async function updateSupplier(id: string, updates: Partial<Supplier>): Promise<Supplier | null> {
-     if (!db) { throw new Error("DB not available in updateSupplier"); }
-    const currentSupplierResult = await (await db).select("SELECT * FROM Suppliers WHERE id = ?", [id]);
+    const db = await getDB();
+    const currentSupplierResult = await db.select("SELECT * FROM Suppliers WHERE id = ?", [id]);
     if (!currentSupplierResult || currentSupplierResult.length === 0) return null;
     const currentSupplier = currentSupplierResult[0];
 
     const { id: _, ...safeUpdates } = updates;
 
-     if (Object.keys(safeUpdates).length === 0) return currentSupplier;
+    if (Object.keys(safeUpdates).length === 0) return currentSupplier;
 
     const setClause = Object.keys(safeUpdates).map(key => `${key} = ?`).join(', ');
     const params = [...Object.values(safeUpdates), id];
@@ -837,7 +878,7 @@ export async function updateSupplier(id: string, updates: Partial<Supplier>): Pr
     const query = `UPDATE Suppliers SET ${setClause} WHERE id = ?`;
 
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         const updatedSupplier = { ...currentSupplier, ...safeUpdates };
         console.log("Updated Supplier (DB):", updatedSupplier);
         return updatedSupplier;
@@ -848,15 +889,15 @@ export async function updateSupplier(id: string, updates: Partial<Supplier>): Pr
 }
 
 export async function deleteSupplier(id: string): Promise<boolean> {
-     if (!db) { throw new Error("DB not available in deleteSupplier"); }
-    const purchasesCheck = await (await db).select("SELECT 1 FROM PurchaseTransactions WHERE supplierId = ? LIMIT 1", [id]);
+    const db = await getDB();
+    const purchasesCheck = await db.select("SELECT 1 FROM PurchaseTransactions WHERE supplierId = ? LIMIT 1", [id]);
     if (purchasesCheck && purchasesCheck.length > 0) {
         throw new Error(`لا يمكن حذف المورد لأنه مرتبط بفواتير شراء.`);
     }
 
     const query = "DELETE FROM Suppliers WHERE id = ?";
     try {
-        const result = await (await db).execute(query, [id]);
+        const result = await db.execute(query, [id]);
         console.log(`Attempted deletion of Supplier ${id} (DB)`);
         return result.affectedRows > 0; // Assume success if execute doesn't throw
     } catch (error) {
@@ -867,9 +908,9 @@ export async function deleteSupplier(id: string): Promise<boolean> {
 
 // --- Customer Data Operations ---
 export async function getCustomers(): Promise<Customer[]> {
-    if (!db) { console.error("DB not available in getCustomers"); return []; }
+    const db = await getDB();
     try {
-        const results = await (await db).select("SELECT * FROM Customers", []);
+        const results = await db.select(`SELECT ${CUSTOMERS_SELECT_FIELDS} FROM Customers`, []);
         return (results as any[]).map(mapCustomerData);
     } catch (error) {
         console.error("Error fetching customers:", error);
@@ -878,12 +919,12 @@ export async function getCustomers(): Promise<Customer[]> {
 }
 
 export async function getCustomerById(id: string): Promise<Customer | undefined> {
-    if (!db) { console.error("DB not available in getCustomerById"); return undefined; }
+    const db = await getDB();
     try {
-        const results = await (await db).select("SELECT * FROM Customers WHERE id = ?", [id]);
+        const results = await db.select(`SELECT ${CUSTOMERS_SELECT_FIELDS} FROM Customers WHERE id = ?`, [id]);
          if (results && results.length > 0) {
-            return mapCustomerData(results[0]);
-        }
+             return mapCustomerData(results[0]);
+         }
         return undefined;
     } catch (error) {
         console.error(`Error fetching customer by id ${id}:`, error);
@@ -892,11 +933,11 @@ export async function getCustomerById(id: string): Promise<Customer | undefined>
 }
 
 export async function addCustomer(customerData: Omit<Customer, 'id'>): Promise<Customer> {
-    if (!db) { throw new Error("DB not available in addCustomer"); }
+    const db = await getDB();
     const newId = `cust-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
     const query = `
         INSERT INTO Customers (id, name, phone, email, address, balance, insuranceCompany, policyNumber, insuranceDiscountRate)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const params = [
         newId,
@@ -910,7 +951,7 @@ export async function addCustomer(customerData: Omit<Customer, 'id'>): Promise<C
         formatNumberForDB(customerData.insuranceDiscountRate), // Format number to string for DB
     ];
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         const newCustomer = { ...customerData, id: newId, balance: customerData.balance ?? '0' };
         console.log("Added Customer (DB):", newCustomer);
         return newCustomer;
@@ -921,13 +962,13 @@ export async function addCustomer(customerData: Omit<Customer, 'id'>): Promise<C
 }
 
 export async function updateCustomer(id: string, updates: Partial<Customer>): Promise<Customer | null> {
-    if (!db) { throw new Error("DB not available in updateCustomer"); }
+    const db = await getDB();
     const currentCustomer = await getCustomerById(id);
     if (!currentCustomer) return null;
 
     const { id: _, ...safeUpdates } = updates;
 
-    // Prepare updates for the database, formatting numbers as strings
+    // Prepare updates for database, formatting numbers as strings
     const dbUpdates: { [key: string]: any } = {};
     const changedUpdates: Partial<Customer> = {}; // Track changes with original types
 
@@ -947,15 +988,14 @@ export async function updateCustomer(id: string, updates: Partial<Customer>): Pr
         }
     }
 
-
-     if (Object.keys(dbUpdates).length === 0) return currentCustomer;
+    if (Object.keys(dbUpdates).length === 0) return currentCustomer;
 
     const setClause = Object.keys(dbUpdates).map(key => `${key} = ?`).join(', ');
     const params = [...Object.values(dbUpdates), id];
     const query = `UPDATE Customers SET ${setClause} WHERE id = ?`;
 
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         const updatedCustomer = { ...currentCustomer, ...changedUpdates };
         console.log("Updated Customer (DB):", updatedCustomer);
         return updatedCustomer;
@@ -966,15 +1006,15 @@ export async function updateCustomer(id: string, updates: Partial<Customer>): Pr
 }
 
 export async function deleteCustomer(id: string): Promise<boolean> {
-    if (!db) { throw new Error("DB not available in deleteCustomer"); }
-    const salesCheck = await (await db).select("SELECT 1 FROM SalesTransactions WHERE customerId = ? LIMIT 1", [id]);
+    const db = await getDB();
+    const salesCheck = await db.select("SELECT 1 FROM SalesTransactions WHERE customerId = ? LIMIT 1", [id]);
     if (salesCheck && salesCheck.length > 0) {
         throw new Error(`لا يمكن حذف العميل لأنه مرتبط بفواتير بيع.`);
     }
 
     const query = "DELETE FROM Customers WHERE id = ?";
     try {
-        const result = await (await db).execute(query, [id]);
+        const result = await db.execute(query, [id]);
         console.log(`Attempted deletion of Customer ${id} (DB)`);
         return result.affectedRows > 0; // Assume success if execute doesn't throw
     } catch (error) {
@@ -985,9 +1025,9 @@ export async function deleteCustomer(id: string): Promise<boolean> {
 
 // --- Sale Transaction Operations ---
 async function getSaleItems(saleId: string): Promise<SaleTransactionItem[]> {
-    if (!db) { console.error("DB not available in getSaleItems"); return []; }
+    const db = await getDB();
     try {
-        const results = await (await db).select("SELECT * FROM SaleTransactionItems WHERE saleId = ?", [saleId]);
+        const results = await db.select("SELECT saleId, productId, CAST(quantity AS CHAR) as quantity, CAST(price AS CHAR) as price, soldUnitType, CAST(costAtSale AS CHAR) as costAtSale, warehouseId FROM SaleTransactionItems WHERE saleId = ?", [saleId]);
         return results as SaleTransactionItem[];
     } catch (error) {
         console.error(`Error fetching items for sale ${saleId}:`, error);
@@ -996,9 +1036,9 @@ async function getSaleItems(saleId: string): Promise<SaleTransactionItem[]> {
 }
 
 export async function getSales(): Promise<SaleTransaction[]> {
-    if (!db) { console.error("DB not available in getSales"); return []; }
+    const db = await getDB();
     try {
-        const salesResults = await (await db).select("SELECT * FROM SalesTransactions ORDER BY date DESC", []);
+        const salesResults = await db.select("SELECT id, customerId, CAST(totalAmount AS CHAR) as totalAmount, CAST(originalTotalAmount AS CHAR) as originalTotalAmount, CAST(subTotalAmount AS CHAR) as subTotalAmount, paymentMethod, CAST(amountPaid AS CHAR) as amountPaid, date, CAST(appliedInsuranceDiscountRate AS CHAR) as appliedInsuranceDiscountRate, saleWarehouseId, paymentTreasuryId FROM SalesTransactions ORDER BY date DESC", []);
         const sales = (salesResults as any[]).map(mapSalesData);
         for (const sale of sales) {
             sale.items = await getSaleItems(sale.id);
@@ -1011,9 +1051,9 @@ export async function getSales(): Promise<SaleTransaction[]> {
 }
 
 export async function getSaleById(id: string): Promise<SaleTransaction | undefined> {
-    if (!db) { console.error("DB not available in getSaleById"); return undefined; }
+    const db = await getDB();
     try {
-        const results = await (await db).select("SELECT * FROM SalesTransactions WHERE id = ?", [id]);
+        const results = await db.select("SELECT id, customerId, CAST(totalAmount AS CHAR) as totalAmount, CAST(originalTotalAmount AS CHAR) as originalTotalAmount, CAST(subTotalAmount AS CHAR) as subTotalAmount, paymentMethod, CAST(amountPaid AS CHAR) as amountPaid, date, CAST(appliedInsuranceDiscountRate AS CHAR) as appliedInsuranceDiscountRate, saleWarehouseId, paymentTreasuryId FROM SalesTransactions WHERE id = ?", [id]);
         if (results && results.length > 0) {
             const sale = mapSalesData(results[0]);
             sale.items = await getSaleItems(sale.id);
@@ -1026,18 +1066,17 @@ export async function getSaleById(id: string): Promise<SaleTransaction | undefin
     }
 }
 
-
 export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<SaleTransaction> {
-    if (!db) { throw new Error("DB not available in addSale"); }
+    const db = await getDB();
     const newSaleId = `sale-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
 
-    // Determine the source warehouse (e.g., from user session, POS setting, or default)
+    // Determine source warehouse (e.g., from user session, POS setting, or default)
     const sourceWarehouseId = saleData.saleWarehouseId || await getDefaultWarehouseId(); // Use sale specific or default
     if (!sourceWarehouseId) {
         throw new Error("لا يوجد مخزن محدد لإتمام عملية البيع.");
     }
 
-    // Determine the target Treasury for payment deposit
+    // Determine target Treasury for payment deposit
     const defaultTreasuryId = await getDefaultTreasuryId(); // Assume this function exists
     const targetTreasuryId = saleData.paymentTreasuryId || defaultTreasuryId;
 
@@ -1050,7 +1089,7 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
                 id, customerId, totalAmount, originalTotalAmount, subTotalAmount,
                 paymentMethod, amountPaid, date, appliedInsuranceDiscountRate,
                 saleWarehouseId, paymentTreasuryId
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const saleParams = [
             newSaleId,
@@ -1074,38 +1113,38 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
         for (const item of saleData.items) {
              console.log(`Processing item: Product ID ${item.productId}, Qty: ${item.quantity} from Warehouse ${sourceWarehouseId}`);
              // Fetch product details (including cost) from the correct warehouse
-             const productResults = await tx.execute("SELECT * FROM Products WHERE id = ? AND warehouseId = ?", [item.productId, sourceWarehouseId]);
+             const productResults = await tx.execute(`SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products WHERE id = ? AND warehouseId = ?`, [item.productId, sourceWarehouseId]);
              const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
 
              if (!product) {
-                 throw new Error(`المنتج ${item.productId} غير موجود في المخزن ${sourceWarehouseId}`);
-             }
+                  throw new Error(`المنتج ${item.productId} غير موجود في المخزن ${sourceWarehouseId}`);
+              }
 
              let costAtSale = item.costAtSale;
-             if (costAtSale === undefined && product.lastPurchaseCost) {
-                 const lastPurchaseCostNum = parseFloatFromDB(product.lastPurchaseCost);
-                 const costNum = item.soldUnitType === 'sub' && product.subUnitsPerUnit
-                     ? lastPurchaseCostNum / product.subUnitsPerUnit
-                     : lastPurchaseCostNum;
-                 costAtSale = formatNumberForDB(costNum) || undefined;
-             }
+              if (costAtSale === undefined && product.lastPurchaseCost) {
+                  const lastPurchaseCostNum = parseFloatFromDB(product.lastPurchaseCost);
+                  const costNum = item.soldUnitType === 'sub' && product.subUnitsPerUnit
+                      ? lastPurchaseCostNum / product.subUnitsPerUnit
+                      : lastPurchaseCostNum;
+                  costAtSale = formatNumberForDB(costNum) || undefined;
+              }
 
-            const itemQuery = `
+             const itemQuery = `
                 INSERT INTO SaleTransactionItems (saleId, productId, quantity, price, soldUnitType, costAtSale, warehouseId)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             `;
-            const itemParams = [
+             const itemParams = [
                 newSaleId,
                 item.productId,
                 formatNumberForDB(item.quantity), // Format number to string
                 formatNumberForDB(item.price), // Format number to string
                 item.soldUnitType,
                 costAtSale, // Already string | undefined | null
-                sourceWarehouseId, // Store the warehouse the item came from
+                sourceWarehouseId, // Store warehouse item came from
             ];
-             console.log(`Inserting Sale Item: ${JSON.stringify(itemParams)}`);
+              console.log(`Inserting Sale Item: ${JSON.stringify(itemParams)}`);
             await tx.execute(itemQuery, itemParams);
-             console.log("Sale Item inserted.");
+              console.log("Sale Item inserted.");
 
             // Update stock in the specific warehouse
             console.log(`Updating stock for product ${item.productId} in warehouse ${sourceWarehouseId}`);
@@ -1116,105 +1155,103 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
             if (item.soldUnitType === 'sub' && product.subUnitsPerUnit && product.subUnitsPerUnit > 0) {
                 quantityToDeduct = quantitySoldNum / product.subUnitsPerUnit;
             }
+
              console.log(`Current Stock: ${currentStockNum}, Sold Qty (Main Units): ${quantityToDeduct}`);
 
-             if (currentStockNum < quantityToDeduct) {
-                  console.error(`Insufficient stock for product ${item.productId} in warehouse ${sourceWarehouseId}. Available: ${currentStockNum}, Needed: ${quantityToDeduct}`);
-                 throw new Error(`لا توجد كمية كافية للمنتج ${product.nameAr} في المخزن المحدد. المتوفر: ${currentStockNum}, المطلوب: ${quantityToDeduct}`);
+            if (currentStockNum < quantityToDeduct) {
+                   console.error(`Insufficient stock for product ${item.productId} in warehouse ${sourceWarehouseId}. Available: ${currentStockNum}, Needed: ${quantityToDeduct}`);
+                   throw new Error(`لا توجد كمية كافية للمنتج ${product.nameAr} في المخزن المحدد. المتوفر: ${currentStockNum}, المطلوب: ${quantityToDeduct}`);
              }
 
              const newStockLevel = currentStockNum - quantityToDeduct;
               console.log(`New Stock Level: ${newStockLevel}`);
             const stockUpdateQuery = "UPDATE Products SET quantity = ? WHERE id = ? AND warehouseId = ?";
             await tx.execute(stockUpdateQuery, [formatNumberForDB(newStockLevel), item.productId, sourceWarehouseId]);
-             console.log("Stock updated.");
-        }
-         console.log("Sale items processed.");
+              console.log("Stock updated.");
+          }
 
         // 3. Update Customer Balance
-        if (saleData.customerId) {
-            console.log(`Updating balance for customer ${saleData.customerId}`);
-            const customerResults = await tx.execute("SELECT * FROM Customers WHERE id = ?", [saleData.customerId]);
-            const customer = customerResults.length > 0 ? mapCustomerData(customerResults[0]) : undefined;
-            if (customer && customer.balance !== undefined) {
-                 const currentBalanceNum = parseFloatFromDB(customer.balance);
-                 const amountDueNum = parseFloatFromDB(saleData.totalAmount);
-                 const paidNum = parseFloatFromDB(saleData.amountPaid);
-                 let balanceChangeNum = 0;
+         if (saleData.customerId) {
+              console.log(`Updating balance for customer ${saleData.customerId}`);
+              const customerResults = await tx.execute("SELECT * FROM Customers WHERE id = ?", [saleData.customerId]);
+              const customer = customerResults.length > 0 ? mapCustomerData(customerResults[0]) : undefined;
+              if (customer && customer.balance !== undefined) {
+                   const currentBalanceNum = parseFloatFromDB(customer.balance);
+                   const amountDueNum = parseFloatFromDB(saleData.totalAmount);
+                   const paidNum = parseFloatFromDB(saleData.amountPaid);
+                   let balanceChangeNum = 0;
 
-                 if (saleData.paymentMethod === 'debt') {
-                     balanceChangeNum = -(amountDueNum - paidNum); // Debt increases negative balance
-                 }
-                 console.log(`Current Balance: ${currentBalanceNum}, Amount Due: ${amountDueNum}, Paid: ${paidNum}, Balance Change: ${balanceChangeNum}`);
+                   if (saleData.paymentMethod === 'debt') {
+                       balanceChangeNum = -(amountDueNum - paidNum); // Debt increases negative balance
+                   }
+                   console.log(`Current Balance: ${currentBalanceNum}, Amount Due: ${amountDueNum}, Paid: ${paidNum}, Balance Change: ${balanceChangeNum}`);
 
-                 if (balanceChangeNum !== 0) {
-                     const newBalanceNum = currentBalanceNum + balanceChangeNum;
-                      console.log(`New Balance: ${newBalanceNum}`);
-                    const balanceUpdateQuery = "UPDATE Customers SET balance = ? WHERE id = ?";
-                    await tx.execute(balanceUpdateQuery, [formatNumberForDB(newBalanceNum), saleData.customerId]);
-                      console.log("Customer balance updated.");
-                 }
-            } else {
-                 console.warn(`Customer ${saleData.customerId} not found or balance is undefined.`);
-            }
-        }
-
-         // 4. Add Treasury Transaction for the payment received into the target treasury
-         if (parseFloatFromDB(saleData.amountPaid) > 0) {
-             await addTreasuryTransaction({
-                 type: 'sale_payment',
-                 amount: formatNumberForDB(saleData.amountPaid)!, // Pass as string, ensure it's positive
-                 date: saleData.date, // Use the same date as the sale
-                 description: `دفعة من فاتورة بيع ${newSaleId}`,
-                 relatedDocumentId: newSaleId,
-                 treasuryId: targetTreasuryId, // Link to the receiving treasury
-             });
+                   if (balanceChangeNum !== 0) {
+                       const newBalanceNum = currentBalanceNum + balanceChangeNum;
+                        console.log(`New Balance: ${newBalanceNum}`);
+                      const balanceUpdateQuery = "UPDATE Customers SET balance = ? WHERE id = ?";
+                      await tx.execute(balanceUpdateQuery, [formatNumberForDB(newBalanceNum), saleData.customerId]);
+                        console.log("Customer balance updated.");
+                   }
+              } else {
+                   console.warn(`Customer ${saleData.customerId} not found or balance is undefined.`);
+              }
          }
 
-        // Commit transaction here... (Conceptual)
-        console.log("Committing addSale transaction...");
+         // 4. Add Treasury Transaction for the payment received into the target treasury
+          if (parseFloatFromDB(saleData.amountPaid) > 0) {
+              await addTreasuryTransaction({
+                  type: 'sale_payment',
+                  amount: formatNumberForDB(saleData.amountPaid)!, // Pass as string, ensure it's positive
+                  date: saleData.date, // Use the same date as the sale
+                  description: `دفعة من فاتورة بيع ${newSaleId}`,
+                  relatedDocumentId: newSaleId,
+                  treasuryId: targetTreasuryId, // Link to the receiving treasury
+              });
+           }
 
-        console.log("Added Sale (DB):", newSaleId);
-        // Fetch the complete data again to return consistent mapped types
-        const finalSaleData = await saleRepository.findByIdWithItems(newSaleId); // Fetch the newly created sale
-        if (!finalSaleData) {
-           throw new Error("Failed to fetch newly created sale data.");
-        }
-        // Handle customerId type conversion (null to undefined) and items type conversion
-        const saleResult: SaleTransaction = {
-            id: finalSaleData.id,
-            customerId: finalSaleData.customerId || undefined,
-            totalAmount: formatNumberForDB(finalSaleData.totalAmount) || '0',
-            originalTotalAmount: formatNumberForDB(finalSaleData.originalTotalAmount) || '0',
-            subTotalAmount: formatNumberForDB(finalSaleData.subTotalAmount) || '0',
-            amountPaid: formatNumberForDB(finalSaleData.amountPaid) || '0',
-            paymentMethod: finalSaleData.paymentMethod as PaymentMethod, // Cast to PaymentMethod type
-            date: finalSaleData.date,
-            appliedInsuranceDiscountRate: formatNumberForDB(finalSaleData.appliedInsuranceDiscountRate) || '0',
-            saleWarehouseId: finalSaleData.saleWarehouseId,
-            paymentTreasuryId: finalSaleData.paymentTreasuryId,
-            items: finalSaleData.items.map(item => ({
-                ...item,
-                quantity: formatNumberForDB(item.quantity) || '0', // Convert number to string
-                price: formatNumberForDB(item.price) || '0', // Convert number to string
-                costAtSale: item.costAtSale !== undefined ? formatNumberForDB(item.costAtSale) || '0' : undefined,
-                soldUnitType: item.soldUnitType as 'main' | 'sub', // Cast to proper union type
-            })),
-        };
+         // Commit transaction here... (Conceptual)
+         console.log("Committing addSale transaction...");
+
+         console.log("Added Sale (DB):", newSaleId);
+         // Fetch the complete data again to return consistent mapped types
+         const finalSaleData = await saleRepository.findByIdWithItems(newSaleId); // Fetch the newly created sale
+         if (!finalSaleData) {
+            throw new Error("Failed to fetch newly created sale data.");
+         }
+         // Handle customerId type conversion (null to undefined) and items type conversion
+         const saleResult: SaleTransaction = {
+              id: finalSaleData.id,
+              customerId: finalSaleData.customerId || undefined,
+              totalAmount: formatNumberForDB(finalSaleData.totalAmount) || '0',
+              originalTotalAmount: formatNumberForDB(finalSaleData.originalTotalAmount) || '0',
+              subTotalAmount: formatNumberForDB(finalSaleData.subTotalAmount) || '0',
+              amountPaid: formatNumberForDB(finalSaleData.amountPaid) || '0',
+              paymentMethod: finalSaleData.paymentMethod as PaymentMethod, // Cast to PaymentMethod type
+              date: finalSaleData.date,
+              appliedInsuranceDiscountRate: formatNumberForDB(finalSaleData.appliedInsuranceDiscountRate) || '0',
+              saleWarehouseId: finalSaleData.saleWarehouseId,
+              paymentTreasuryId: finalSaleData.paymentTreasuryId,
+              items: finalSaleData.items.map(item => ({
+                  ...item,
+                  quantity: formatNumberForDB(item.quantity) || '0', // Convert number to string
+                  price: formatNumberForDB(item.price) || '0', // Convert number to string
+                  costAtSale: item.costAtSale !== undefined ? formatNumberForDB(item.costAtSale) || '0' : undefined,
+                  soldUnitType: item.soldUnitType as 'main' | 'sub', // Cast to proper union type
+              })),
+         };
          console.log("addSale finished successfully.");
-        return saleResult;
-
+         return saleResult;
     });
 }
 
-
 export async function deleteSale(saleId: string): Promise<boolean> {
-    if (!db) { throw new Error("DB not available in deleteSale"); }
+    const db = await getDB();
 
     // Start transaction... (Conceptual)
     console.log(`Starting deleteSale transaction for ID: ${saleId}`);
     try {
-        // 1. Get the sale details first to reverse effects
+        // 1. Get sale details first to reverse effects
         console.log("Fetching sale details...");
         const sale = await getSaleById(saleId);
         if (!sale) {
@@ -1226,15 +1263,15 @@ export async function deleteSale(saleId: string): Promise<boolean> {
         console.log("Reversing stock updates...");
         for (const item of sale.items) {
              const itemWarehouseId = item.warehouseId || sale.saleWarehouseId || await getDefaultWarehouseId(); // Determine warehouse from item, sale, or default
-              if (!itemWarehouseId) {
-                 console.error(`Could not determine warehouse for item ${item.productId} in sale ${saleId}. Skipping stock reversal for this item.`);
-                 continue; // Skip if warehouse cannot be determined
-             }
-             console.log(`Reversing stock for product: ${item.productId}, Qty: ${item.quantity} in Warehouse ${itemWarehouseId}`);
-             const productResults = await (await db).select("SELECT * FROM Products WHERE id = ? AND warehouseId = ?", [item.productId, itemWarehouseId]);
-             const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
+                if (!itemWarehouseId) {
+                   console.error(`Could not determine warehouse for item ${item.productId} in sale ${saleId}. Skipping stock reversal for this item.`);
+                   continue; // Skip if warehouse cannot be determined
+               }
+              console.log(`Reversing stock for product: ${item.productId}, Qty: ${item.quantity} in Warehouse ${itemWarehouseId}`);
+              const productResults = await db.select(`SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products WHERE id = ? AND warehouseId = ?`, [item.productId, itemWarehouseId]);
+              const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
 
-            if (product) {
+              if (product) {
                 const currentStockNum = parseFloatFromDB(product.quantity);
                 const quantitySoldNum = parseFloatFromDB(item.quantity);
                 let quantityToAddBack = quantitySoldNum;
@@ -1242,76 +1279,74 @@ export async function deleteSale(saleId: string): Promise<boolean> {
                 if (item.soldUnitType === 'sub' && product.subUnitsPerUnit && product.subUnitsPerUnit > 0) {
                     quantityToAddBack = quantitySoldNum / product.subUnitsPerUnit;
                 }
-                 console.log(`Current Stock: ${currentStockNum}, Quantity to Add Back: ${quantityToAddBack}`);
+
+                console.log(`Current Stock: ${currentStockNum}, Quantity to Add Back: ${quantityToAddBack}`);
 
                 const newStockLevel = currentStockNum + quantityToAddBack;
-                 console.log(`New Stock Level after reversal: ${newStockLevel}`);
-                const stockUpdateQuery = "UPDATE Products SET quantity = ? WHERE id = ? AND warehouseId = ?";
-                await (await db).execute(stockUpdateQuery, [formatNumberForDB(newStockLevel), item.productId, itemWarehouseId]);
-                 console.log("Stock reversal complete for item.");
-            } else {
-                 // Product might have been moved or deleted since the sale
-                console.warn(`Product with ID ${item.productId} not found in warehouse ${itemWarehouseId} during sale deletion stock adjustment.`);
-            }
-        }
-         console.log("Stock updates reversed.");
+                   console.log(`New Stock Level after reversal: ${newStockLevel}`);
+                  const stockUpdateQuery = "UPDATE Products SET quantity = ? WHERE id = ? AND warehouseId = ?";
+                  await db.execute(stockUpdateQuery, [formatNumberForDB(newStockLevel), item.productId, itemWarehouseId]);
+                   console.log("Stock reversal complete for item.");
+              } else {
+                   console.warn(`Product with ID ${item.productId} not found in warehouse ${itemWarehouseId} during sale deletion stock adjustment.`);
+              }
+         }
+          console.log("Stock updates reversed.");
 
         // 3. Reverse customer balance update
-        if (sale.customerId) {
-             console.log(`Reversing balance for customer ${sale.customerId}`);
-            const customer = await getCustomerById(sale.customerId);
-            if (customer && customer.balance !== undefined) {
-                const currentBalanceNum = parseFloatFromDB(customer.balance);
-                const amountDueNum = parseFloatFromDB(sale.totalAmount);
-                const paidNum = parseFloatFromDB(sale.amountPaid);
-                let balanceChangeToReverseNum = 0;
+         if (sale.customerId) {
+              console.log(`Reversing balance for customer ${sale.customerId}`);
+              const customer = await getCustomerById(sale.customerId);
+              if (customer && customer.balance !== undefined) {
+                   const currentBalanceNum = parseFloatFromDB(customer.balance);
+                   const amountDueNum = parseFloatFromDB(sale.totalAmount);
+                   const paidNum = parseFloatFromDB(sale.amountPaid);
+                   let balanceChangeToReverseNum = 0;
 
-                if (sale.paymentMethod === 'debt') {
-                    balanceChangeToReverseNum = -(amountDueNum - paidNum);
-                }
-                 console.log(`Current Balance: ${currentBalanceNum}, Change to Reverse: ${balanceChangeToReverseNum}`);
+                   if (sale.paymentMethod === 'debt') {
+                       balanceChangeToReverseNum = -(amountDueNum - paidNum);
+                   }
+                   console.log(`Current Balance: ${currentBalanceNum}, Change to Reverse: ${balanceChangeToReverseNum}`);
 
-                if (balanceChangeToReverseNum !== 0) {
-                    const originalBalanceNum = currentBalanceNum - balanceChangeToReverseNum;
-                     console.log(`Original Balance (estimated): ${originalBalanceNum}`);
-                    const balanceUpdateQuery = "UPDATE Customers SET balance = ? WHERE id = ?";
-                    await (await db).execute(balanceUpdateQuery, [formatNumberForDB(originalBalanceNum), sale.customerId]);
-                     console.log("Customer balance reversal complete.");
-                }
-            } else {
-                 console.warn(`Customer ${sale.customerId} not found or balance undefined during reversal.`);
-            }
-        }
-
-         // 4. Reverse Treasury Transaction (add a negative transaction in the original treasury)
-         const paymentTreasuryId = sale.paymentTreasuryId || await getDefaultTreasuryId(); // Determine original treasury
-         if (parseFloatFromDB(sale.amountPaid) > 0) {
-             await addTreasuryTransaction({
-                 type: 'sale_payment_reversal', // Specific type for reversal
-                 amount: formatNumberForDB(-parseFloatFromDB(sale.amountPaid))!, // Negative amount to reverse income, as string
-                 date: new Date(), // Date of reversal
-                 description: `عكس دفعة فاتورة بيع محذوفة ${saleId}`,
-                 relatedDocumentId: saleId,
-                 treasuryId: paymentTreasuryId, // Link to the original treasury
-             });
+                   if (balanceChangeToReverseNum !== 0) {
+                       const originalBalanceNum = currentBalanceNum - balanceChangeToReverseNum;
+                        console.log(`Original Balance (estimated): ${originalBalanceNum}`);
+                      const balanceUpdateQuery = "UPDATE Customers SET balance = ? WHERE id = ?";
+                      await db.execute(balanceUpdateQuery, [formatNumberForDB(originalBalanceNum), sale.customerId]);
+                        console.log("Customer balance reversal complete.");
+                   }
+              } else {
+                   console.warn(`Customer ${sale.customerId} not found or balance undefined during reversal.`);
+              }
          }
 
+         // 4. Reverse Treasury Transaction (add a negative transaction in the original treasury)
+          const paymentTreasuryId = sale.paymentTreasuryId || await getDefaultTreasuryId(); // Determine the original treasury
+          if (parseFloatFromDB(sale.amountPaid) > 0) {
+              await addTreasuryTransaction({
+                  type: 'sale_payment_reversal', // Specific type for reversal
+                  amount: formatNumberForDB(-parseFloatFromDB(sale.amountPaid))!, // Negative amount to reverse income, as string
+                  date: new Date(), // Date of reversal
+                  description: `عكس دفعة فاتورة بيع محذوفة ${saleId}`,
+                  relatedDocumentId: saleId,
+                  treasuryId: paymentTreasuryId, // Link to the original treasury
+              });
+           }
 
-        // 5. Delete sale items
-        console.log("Deleting sale items...");
-        await (await db).execute("DELETE FROM SaleTransactionItems WHERE saleId = ?", [saleId]);
+         // 5. Delete sale items
+         console.log("Deleting sale items...");
+         await db.execute("DELETE FROM SaleTransactionItems WHERE saleId = ?", [saleId]);
          console.log("Sale items deleted.");
 
-        // 6. Delete sale transaction itself
-        console.log("Deleting sale transaction...");
-        const result = await (await db).execute("DELETE FROM SalesTransactions WHERE id = ?", [saleId]);
+         // 6. Delete sale transaction itself
+         console.log("Deleting sale transaction...");
+         const result = await db.execute("DELETE FROM SalesTransactions WHERE id = ?", [saleId]);
          console.log("Sale transaction deleted.");
 
-
-        // Commit transaction... (Conceptual)
-        console.log("Committing deleteSale transaction...");
-        console.log(`Deleted Sale ${saleId} and reversed effects (DB)`);
-        return result.affectedRows > 0;
+         // Commit transaction... (Conceptual)
+         console.log("Committing deleteSale transaction...");
+         console.log(`Deleted Sale ${saleId} and reversed effects (DB)`);
+         return result.affectedRows > 0;
 
     } catch (error) {
         // Rollback transaction... (Conceptual)
@@ -1321,85 +1356,81 @@ export async function deleteSale(saleId: string): Promise<boolean> {
     }
 }
 
-
 export async function deletePurchase(purchaseId: string): Promise<boolean> {
-    if (!db) { throw new Error("DB not available in deletePurchase"); }
+    const db = await getDB();
 
     // Start transaction... (Conceptual)
      console.log(`Starting deletePurchase transaction for ID: ${purchaseId}`);
     try {
-        // 1. Get the purchase details first to reverse effects
+        // 1. Get purchase details first to reverse effects
          console.log("Fetching purchase details...");
-        const purchase = await getPurchaseById(purchaseId);
-        if (!purchase) {
+         const purchase = await getPurchaseById(purchaseId);
+         if (!purchase) {
             throw new Error(`Purchase with ID ${purchaseId} not found.`);
-        }
-         console.log("Purchase details fetched.");
+         }
+          console.log("Purchase details fetched.");
 
-         // Determine the target warehouse from the purchase record or default
+         // Determine target warehouse from the purchase record or default
          const targetWarehouseId = purchase.destinationWarehouseId || await getDefaultWarehouseId();
          if (!targetWarehouseId) {
-             throw new Error("Could not determine warehouse to reverse stock from.");
+              throw new Error("Could not determine warehouse to reverse stock from.");
          }
-         // Determine the payment treasury from the purchase record or default
+          // Determine payment treasury from the purchase record or default
          const paymentTreasuryId = purchase.paymentTreasuryId || await getDefaultTreasuryId();
 
+         // 2. Reverse stock updates for each item (in the correct warehouse)
+          console.log("Reversing stock updates...");
+         for (const item of purchase.items) {
+              console.log(`Reversing stock for product: ${item.productId}, Qty: ${item.quantity} in Warehouse ${targetWarehouseId}`);
+              const productResults = await db.select(`SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products WHERE id = ? AND warehouseId = ?`, [item.productId, targetWarehouseId]);
+              const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
 
-        // 2. Reverse stock updates for each item (in the correct warehouse)
-         console.log("Reversing stock updates...");
-        for (const item of purchase.items) {
-             console.log(`Reversing stock for product: ${item.productId}, Qty: ${item.quantity} in Warehouse ${targetWarehouseId}`);
-            const productResults = await (await db).select("SELECT * FROM Products WHERE id = ? AND warehouseId = ?", [item.productId, targetWarehouseId]);
-            const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
-
-            if (product) {
+              if (product) {
                 const currentStockNum = parseFloatFromDB(product.quantity);
                 const quantityPurchasedNum = parseFloatFromDB(item.quantity);
                 const newStockLevel = currentStockNum - quantityPurchasedNum; // Subtract purchased quantity
-                 console.log(`Current Stock: ${currentStockNum}, Qty Purchased: ${quantityPurchasedNum}`);
 
-                 const finalNewStock = Math.max(0, newStockLevel); // Prevent negative stock
-                  console.log(`New Stock Level after reversal: ${finalNewStock}`);
+                console.log(`Current Stock: ${currentStockNum}, Qty Purchased: ${quantityPurchasedNum}`);
 
-                const stockUpdateQuery = "UPDATE Products SET quantity = ? WHERE id = ? AND warehouseId = ?";
-                await (await db).execute(stockUpdateQuery, [formatNumberForDB(finalNewStock), item.productId, targetWarehouseId]);
-                 console.log("Stock reversal complete for item.");
-            } else {
-                console.warn(`Product with ID ${item.productId} not found in warehouse ${targetWarehouseId} during purchase deletion stock adjustment.`);
-            }
-        }
-         console.log("Stock updates reversed.");
+                const finalNewStock = Math.max(0, newStockLevel); // Prevent negative stock
+                    console.log(`New Stock Level after reversal: ${finalNewStock}`);
 
+                  const stockUpdateQuery = "UPDATE Products SET quantity = ? WHERE id = ? AND warehouseId = ?";
+                  await db.execute(stockUpdateQuery, [formatNumberForDB(finalNewStock), item.productId, targetWarehouseId]);
+                   console.log("Stock reversal complete for item.");
+              } else {
+                   console.warn(`Product with ID ${item.productId} not found in warehouse ${targetWarehouseId} during purchase deletion stock adjustment.`);
+              }
+           }
+          console.log("Stock updates reversed.");
 
          // 3. Reverse Treasury Transaction (add a positive transaction if payment was made, in the correct treasury)
-         const amountPaidNum = parseFloatFromDB(purchase.amountPaid);
-         if (amountPaidNum > 0) {
-            await addTreasuryTransaction({
-               type: 'purchase_payment_reversal', // Specific type for reversal
-               amount: formatNumberForDB(amountPaidNum)!, // Positive amount to reverse outflow, as string
-               date: new Date(), // Date of reversal
-               description: `عكس دفعة فاتورة شراء محذوفة ${purchaseId}`,
-               relatedDocumentId: purchaseId,
-               treasuryId: paymentTreasuryId, // Link to the original payment treasury
-            });
-         }
+          const amountPaidNum = parseFloatFromDB(purchase.amountPaid);
+           if (amountPaidNum > 0) {
+             await addTreasuryTransaction({
+                type: 'purchase_payment_reversal', // Specific type for reversal
+                amount: formatNumberForDB(amountPaidNum)!, // Positive amount to reverse outflow, as string
+                date: new Date(), // Date of reversal
+                description: `عكس دفعة فاتورة شراء محذوفة ${purchaseId}`,
+                relatedDocumentId: purchaseId,
+                treasuryId: paymentTreasuryId, // Link to the original payment treasury
+             });
+          }
 
-        // 4. Delete purchase items
-         console.log("Deleting purchase items...");
-        await (await db).execute("DELETE FROM PurchaseTransactionItems WHERE purchaseId = ?", [purchaseId]);
-         console.log("Purchase items deleted.");
+         // 4. Delete purchase items
+          console.log("Deleting purchase items...");
+         await db.execute("DELETE FROM PurchaseTransactionItems WHERE purchaseId = ?", [purchaseId]);
+          console.log("Purchase items deleted.");
 
+         // 5. Delete purchase transaction itself
+          console.log("Deleting purchase transaction...");
+         const result = await db.execute("DELETE FROM PurchaseTransactions WHERE id = ?", [purchaseId]);
+          console.log("Purchase transaction deleted.");
 
-        // 5. Delete purchase transaction itself
-         console.log("Deleting purchase transaction...");
-        const result = await (await db).execute("DELETE FROM PurchaseTransactions WHERE id = ?", [purchaseId]);
-         console.log("Purchase transaction deleted.");
-
-
-        // Commit transaction... (Conceptual)
-         console.log("Committing deletePurchase transaction...");
-        console.log(`Deleted Purchase ${purchaseId} and attempted to reverse stock (DB)`);
-        return result.affectedRows > 0;
+         // Commit transaction... (Conceptual)
+          console.log("Committing deletePurchase transaction...");
+          console.log(`Deleted Purchase ${purchaseId} and attempted to reverse stock (DB)`);
+          return result.affectedRows > 0;
 
     } catch (error) {
         // Rollback transaction... (Conceptual)
@@ -1409,13 +1440,12 @@ export async function deletePurchase(purchaseId: string): Promise<boolean> {
     }
 }
 
-
 // --- User Operations ---
 export async function getUsers(): Promise<User[]> {
-    if (!db) { console.error("DB not available in getUsers"); return []; }
+    const db = await getDB();
     try {
         // Select passwordHash as well to display it in the table
-        const results = await (await db).select("SELECT id, name, email, role, passwordHash FROM Users", []);
+        const results = await db.select("SELECT id, username, name, email, role, passwordHash FROM Users", []);
         return results as User[];
     } catch (error) {
         console.error("Error fetching users:", error);
@@ -1423,25 +1453,23 @@ export async function getUsers(): Promise<User[]> {
     }
 }
 
-
-export async function getUserForLogin(email: string): Promise<User | undefined> {
-    if (!db) { console.error("DB not available in getUserForLogin"); return undefined; }
+export async function getUserForLogin(username: string): Promise<User | undefined> {
+    const db = await getDB();
     try {
          // Fetch user including password hash for verification if needed
-        const results = await (await db).select("SELECT id, name, email, role, passwordHash FROM Users WHERE email = ?", [email]);
-        if (results && results.length > 0) {
-            return results[0] as User;
-        }
+         const results = await db.select("SELECT id, username, name, email, role, passwordHash FROM Users WHERE username = ?", [username]);
+         if (results && results.length > 0) {
+             return results[0] as User;
+         }
         return undefined;
     } catch (error) {
-        console.error(`Error fetching user by email ${email}:`, error);
+        console.error(`Error fetching user by username ${username}:`, error);
         throw error;
     }
 }
 
-
 export async function addUser(userData: Omit<User, 'id' | 'passwordHash'> & { password?: string }): Promise<User> {
-    if (!db) { throw new Error("DB not available in addUser"); }
+    const db = await getDB();
     const newId = `user-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
 
     // --- Placeholder for Password Hashing ---
@@ -1457,12 +1485,12 @@ export async function addUser(userData: Omit<User, 'id' | 'passwordHash'> & { pa
     // ----------------------------------------
 
     const query = `
-        INSERT INTO Users (id, name, email, role, passwordHash)
+        INSERT INTO Users (id, username, name, email, role, passwordHash)
         VALUES (?, ?, ?, ?, ?)
     `;
-    const params = [newId, userData.name, userData.email, userData.role, passwordHash];
+    const params = [newId, userData.username, userData.name, userData.email, userData.role, passwordHash];
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         // Exclude password and passwordHash from the returned object
         const { password, ...newUser } = { ...userData, id: newId };
         console.log("Added User (DB):", newUser);
@@ -1474,11 +1502,10 @@ export async function addUser(userData: Omit<User, 'id' | 'passwordHash'> & { pa
 }
 
 export async function updateUser(id: string, updates: Partial<User> & { password?: string }): Promise<User | null> {
-    if (!db) { throw new Error("DB not available in updateUser"); }
-    const currentUserResult = await (await db).select("SELECT id, name, email, role, passwordHash FROM Users WHERE id = ?", [id]);
+    const db = await getDB();
+    const currentUserResult = await db.select("SELECT id, username, name, email, role, passwordHash FROM Users WHERE id = ?", [id]);
     if (!currentUserResult || currentUserResult.length === 0) return null;
     const currentUser = currentUserResult[0] as User;
-
 
     const { id: _, password, ...safeUpdates } = updates; // Exclude ID and password from basic updates
 
@@ -1490,7 +1517,6 @@ export async function updateUser(id: string, updates: Partial<User> & { password
         updateFields.passwordHash = password; // Replace with: await hashPassword(password);
     }
 
-
     if (Object.keys(updateFields).length === 0) return currentUser;
 
     const setClause = Object.keys(updateFields).map(key => `${key} = ?`).join(', ');
@@ -1498,8 +1524,8 @@ export async function updateUser(id: string, updates: Partial<User> & { password
     const query = `UPDATE Users SET ${setClause} WHERE id = ?`;
 
     try {
-        await (await db).execute(query, params);
-        // Return the updated user *including* the hash for consistency if it was updated
+        await db.execute(query, params);
+        // Return updated user *including* hash for consistency if it was updated
         const updatedUser = { ...currentUser, ...updateFields };
         console.log("Updated User (DB):", updatedUser);
         return updatedUser as User;
@@ -1510,12 +1536,12 @@ export async function updateUser(id: string, updates: Partial<User> & { password
 }
 
 export async function deleteUser(id: string): Promise<boolean> {
-    if (!db) { throw new Error("DB not available in deleteUser"); }
+    const db = await getDB();
     // Add Dependency Check if needed (e.g., check if user created sales)
 
     const query = "DELETE FROM Users WHERE id = ?";
     try {
-        const result = await (await db).execute(query, [id]);
+        const result = await db.execute(query, [id]);
         console.log(`Attempted deletion of User ${id} (DB)`);
         return result.affectedRows > 0; // Assume success if execute doesn't throw
     } catch (error) {
@@ -1528,9 +1554,9 @@ export async function deleteUser(id: string): Promise<boolean> {
 
 // Get all treasuries
 export async function getTreasuries(): Promise<Treasury[]> {
-    if (!db) { console.error("DB not available in getTreasuries"); return []; }
+    const db = await getDB();
     try {
-        const results = await (await db).select("SELECT * FROM Treasuries", []);
+        const results = await db.select("SELECT * FROM Treasuries", []);
         return (results as any[]).map(mapTreasuryData);
     } catch (error) {
         console.error("Error fetching treasuries:", error);
@@ -1540,11 +1566,11 @@ export async function getTreasuries(): Promise<Treasury[]> {
 
 // Add a new treasury
 export async function addTreasury(treasuryData: Omit<Treasury, 'id'>): Promise<Treasury> {
-    if (!db) { throw new Error("DB not available in addTreasury"); }
+    const db = await getDB();
     const newId = `trs-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
 
     if (treasuryData.isDefault) {
-        await (await db).execute("UPDATE Treasuries SET isDefault = 0 WHERE isDefault = 1", []);
+        await db.execute("UPDATE Treasuries SET isDefault = 0 WHERE isDefault = 1", []);
     }
 
     const query = `
@@ -1558,7 +1584,7 @@ export async function addTreasury(treasuryData: Omit<Treasury, 'id'>): Promise<T
         treasuryData.isDefault ? 1 : 0,
     ];
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         const newTreasury = { ...treasuryData, id: newId };
         console.log("Added Treasury (DB):", newTreasury);
         return newTreasury;
@@ -1570,13 +1596,13 @@ export async function addTreasury(treasuryData: Omit<Treasury, 'id'>): Promise<T
 
 // Update a treasury
 export async function updateTreasury(id: string, updates: Partial<Omit<Treasury, 'id'>>): Promise<Treasury | null> {
-    if (!db) { throw new Error("DB not available in updateTreasury"); }
-    const currentTreasuryResult = await (await db).select("SELECT * FROM Treasuries WHERE id = ?", [id]);
+    const db = await getDB();
+    const currentTreasuryResult = await db.select("SELECT * FROM Treasuries WHERE id = ?", [id]);
     if (!currentTreasuryResult || currentTreasuryResult.length === 0) return null;
     const currentTreasury = currentTreasuryResult[0];
 
     if (updates.isDefault === true && !parseBooleanFromDB(currentTreasury.isDefault)) {
-        await (await db).execute("UPDATE Treasuries SET isDefault = 0 WHERE isDefault = 1", []);
+        await db.execute("UPDATE Treasuries SET isDefault = 0 WHERE isDefault = 1", []);
     }
 
     const updateKeys = Object.keys(updates) as (keyof typeof updates)[];
@@ -1605,7 +1631,7 @@ export async function updateTreasury(id: string, updates: Partial<Omit<Treasury,
     params.push(id);
 
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         const updatedTreasury = { ...mapTreasuryData(currentTreasury), ...updates };
         console.log("Updated Treasury (DB):", updatedTreasury);
         return updatedTreasury;
@@ -1617,22 +1643,21 @@ export async function updateTreasury(id: string, updates: Partial<Omit<Treasury,
 
 // Delete a treasury (ensure it has no transactions)
 export async function deleteTreasury(id: string): Promise<boolean> {
-    if (!db) { throw new Error("DB not available in deleteTreasury"); }
+    const db = await getDB();
     // Dependency Check
-    const transactionCheck = await (await db).select("SELECT 1 FROM TreasuryTransactions WHERE treasuryId = ? LIMIT 1", [id]);
+    const transactionCheck = await db.select("SELECT 1 FROM TreasuryTransactions WHERE treasuryId = ? LIMIT 1", [id]);
     if (transactionCheck && transactionCheck.length > 0) {
         throw new Error(`لا يمكن حذف الخزنة لأنها تحتوي على حركات مالية.`);
     }
-    const treasuryResult = await (await db).select("SELECT isDefault FROM Treasuries WHERE id = ?", [id]);
+    const treasuryResult = await db.select("SELECT isDefault FROM Treasuries WHERE id = ?", [id]);
     const treasury = treasuryResult?.[0];
-     if (treasury && parseBooleanFromDB(treasury.isDefault)) {
+    if (treasury && parseBooleanFromDB(treasury.isDefault)) {
          throw new Error(`لا يمكن حذف الخزنة الافتراضية.`);
-     }
-
+    }
 
     const query = "DELETE FROM Treasuries WHERE id = ?";
     try {
-        const result = await (await db).execute(query, [id]);
+        const result = await db.execute(query, [id]);
         console.log(`Attempted deletion of Treasury ${id} (DB)`);
         return result.affectedRows > 0;
     } catch (error) {
@@ -1643,16 +1668,16 @@ export async function deleteTreasury(id: string): Promise<boolean> {
 
 // Get default treasury ID
 export async function getDefaultTreasuryId(): Promise<string | undefined> {
-    if (!db) { console.error("DB not available in getDefaultTreasuryId"); return undefined; }
+    const db = await getDB();
     try {
-        const results = await (await db).select("SELECT id FROM Treasuries WHERE isDefault = 1 LIMIT 1", []);
+        const results = await db.select("SELECT id FROM Treasuries WHERE isDefault = 1 LIMIT 1", []);
         if (results && results.length > 0) {
             return results[0].id as string;
         }
-        // Fallback: If no default, return the first treasury found
-        const firstTreasury = await (await db).select("SELECT id FROM Treasuries LIMIT 1", []);
+        // Fallback: If no default, return first treasury found
+        const firstTreasury = await db.select("SELECT id FROM Treasuries LIMIT 1", []);
         if (firstTreasury && firstTreasury.length > 0) {
-            console.warn("No default treasury set, using the first available treasury.");
+            console.warn("No default treasury set, using first available treasury.");
             return firstTreasury[0].id as string;
         }
         return undefined; // No treasuries exist
@@ -1662,16 +1687,12 @@ export async function getDefaultTreasuryId(): Promise<string | undefined> {
     }
 }
 
-
 // --- Treasury Transaction Operations (Linked to Financial Treasuries) ---
 
 export async function getTreasuryTransactions(filters?: { startDate?: Date, endDate?: Date, type?: TreasuryTransactionType, treasuryId?: string }): Promise<TreasuryTransaction[]> {
-    if (!db) {
-        console.error("DB not available in getTreasuryTransactions");
-        return [];
-    }
+    const db = await getDB();
     try {
-        let query = "SELECT * FROM TreasuryTransactions";
+        let query = "SELECT id, type, CAST(amount AS CHAR) as amount, date, description, userId, relatedDocumentId, treasuryId FROM TreasuryTransactions";
         const params: any[] = [];
         const conditions: string[] = [];
 
@@ -1688,14 +1709,13 @@ export async function getTreasuryTransactions(filters?: { startDate?: Date, endD
             params.push(filters.type);
         }
         // Filter specifically for transactions *without* a treasury ID if 'general' is selected,
-        // or filter by the specific treasury ID otherwise.
+        // or filter by specific treasury ID otherwise.
         if (filters?.treasuryId === undefined) { // 'general' treasury selected (no specific ID)
-             conditions.push("treasuryId IS NULL");
+              conditions.push("treasuryId IS NULL");
         } else if (filters?.treasuryId) { // Specific treasury selected
-            conditions.push("treasuryId = ?");
-            params.push(filters.treasuryId);
+              conditions.push("treasuryId = ?");
+              params.push(filters.treasuryId);
         }
-
 
         if (conditions.length > 0) {
             query += " WHERE " + conditions.join(" AND ");
@@ -1703,7 +1723,7 @@ export async function getTreasuryTransactions(filters?: { startDate?: Date, endD
 
         query += " ORDER BY date DESC"; // Order by most recent first
 
-        const results = await (await db).select(query, params);
+        const results = await db.select(query, params);
         return (results as any[]).map(mapTreasuryTransactionData); // Use correct mapper
     } catch (error) {
         console.error("Error fetching treasury transactions:", error);
@@ -1712,13 +1732,10 @@ export async function getTreasuryTransactions(filters?: { startDate?: Date, endD
 }
 
 export async function getTreasuryBalance(): Promise<number> {
-    if (!db) {
-        console.error("DB not available in getTreasuryBalance");
-        return 0;
-    }
+    const db = await getDB();
     try {
         // استخدم DOUBLE بدل REAL لحل مشكلة MariaDB
-        const result = await (await db).select(
+        const result = await db.select(
             "SELECT SUM(CAST(amount AS DOUBLE)) as balance FROM TreasuryTransactions", 
             []
         );
@@ -1733,25 +1750,23 @@ export async function getTreasuryBalance(): Promise<number> {
     }
 }
 
-
 export async function addTreasuryTransaction(
     txData: Omit<TreasuryTransaction, 'id' | 'date'> & { date?: Date } // Make date optional for auto-generation
 ): Promise<TreasuryTransaction> {
-    if (!db) { throw new Error("DB not available in addTreasuryTransaction"); }
+    const db = await getDB();
     const newId = `trx-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
     const transactionDate = txData.date || new Date(); // Use provided date or now
 
     // Ensure amount is formatted correctly (negative for withdrawal/outflow)
     let amountNum = parseFloatFromDB(txData.amount); // Parse incoming amount (should be string)
     if (['withdrawal', 'purchase_payment', 'expense', 'transfer_out', 'sale_payment_reversal'].includes(txData.type) && amountNum > 0) {
-       console.warn(`Automatically negating positive amount for outflow transaction type: ${txData.type}`);
-       amountNum = -amountNum;
+        console.warn(`Automatically negating positive amount for outflow transaction type: ${txData.type}`);
+        amountNum = -amountNum;
     }
      if (['deposit', 'sale_payment', 'transfer_in', 'purchase_payment_reversal', 'opening_balance'].includes(txData.type) && amountNum < 0) {
-       console.warn(`Automatically making negative amount positive for inflow transaction type: ${txData.type}`);
-       amountNum = Math.abs(amountNum);
-     }
-
+        console.warn(`Automatically making negative amount positive for inflow transaction type: ${txData.type}`);
+        amountNum = Math.abs(amountNum);
+       }
 
     const query = `
         INSERT INTO TreasuryTransactions (
@@ -1769,7 +1784,7 @@ export async function addTreasuryTransaction(
         txData.treasuryId, // Add treasuryId here
     ];
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         const newTransaction: TreasuryTransaction = {
             ...txData,
             id: newId,
@@ -1784,10 +1799,9 @@ export async function addTreasuryTransaction(
     }
 }
 
-
 // --- Helper Functions ---
 export async function getProductNameById(id: string): Promise<string> {
-    // This might need adjustment if the same product ID exists in multiple warehouses
+    // This might need adjustment if same product ID exists in multiple warehouses
     const product = await getProductById(id); // Fetches first matching product ID
     return product ? product.nameAr : `منتج غير معروف (${id.substring(0,6)})`;
 }
@@ -1810,7 +1824,7 @@ export function calculateDaysUntilExpiry(expiryDate?: Date | string): number {
 
 // --- Reporting Functions (Link to Physical Warehouses) ---
 export async function getProductsNearingExpiry(daysThreshold: number = 60, warehouseId?: string): Promise<ProductExpiryInfo[]> {
-    if (!db) { console.error("DB not available in getProductsNearingExpiry"); return []; }
+    const db = await getDB();
     const today = new Date();
     const thresholdDate = addDays(today, daysThreshold);
     const todayStr = formatDateForDB(today); // Format for query
@@ -1836,7 +1850,7 @@ export async function getProductsNearingExpiry(daysThreshold: number = 60, wareh
     query += " ORDER BY expiryDate ASC";
 
     try {
-        const results = await (await db).select(query, params);
+        const results = await db.select(query, params);
         return (results as any[]).map(p => ({
             id: p.id,
             nameAr: p.nameAr,
@@ -1844,7 +1858,7 @@ export async function getProductsNearingExpiry(daysThreshold: number = 60, wareh
             quantity: p.quantity, // Keep as string
             daysUntilExpiry: calculateDaysUntilExpiry(p.expiryDate),
             warehouseId: p.warehouseId, // Include warehouseId
-        }));
+        })) as ProductExpiryInfo[];
     } catch (error) {
         console.error("Error fetching nearing expiry products:", error);
         throw error;
@@ -1852,12 +1866,14 @@ export async function getProductsNearingExpiry(daysThreshold: number = 60, wareh
 }
 
 export async function getExpiredProducts(warehouseId?: string): Promise<ProductExpiryInfo[]> {
-    if (!db) { console.error("DB not available in getExpiredProducts"); return []; }
-    const todayStr = formatDateForDB(new Date());
-     if (!todayStr) {
+    const db = await getDB();
+    const todayStr = formatDateForDB(new Date()); // Format for query
+
+    if (!todayStr) {
         console.error("Could not format date for expired products query.");
         return [];
     }
+
     let query = `
         SELECT id, nameAr, expiryDate, quantity, warehouseId
         FROM Products
@@ -1872,15 +1888,15 @@ export async function getExpiredProducts(warehouseId?: string): Promise<ProductE
      query += " ORDER BY expiryDate ASC";
 
     try {
-        const results = await (await db).select(query, params);
+        const results = await db.select(query, params);
         return (results as any[]).map(p => ({
-             id: p.id,
-             nameAr: p.nameAr,
-             expiryDate: parseDateFromDB(p.expiryDate)!, // Parse date back
-             quantity: p.quantity, // Keep as string
-             daysUntilExpiry: calculateDaysUntilExpiry(p.expiryDate),
-             warehouseId: p.warehouseId, // Include warehouseId
-        }));
+            id: p.id,
+            nameAr: p.nameAr,
+            expiryDate: parseDateFromDB(p.expiryDate)!, // Parse date back
+            quantity: p.quantity, // Keep as string
+            daysUntilExpiry: calculateDaysUntilExpiry(p.expiryDate),
+            warehouseId: p.warehouseId, // Include warehouseId
+        })) as ProductExpiryInfo[];
     } catch (error) {
         console.error("Error fetching expired products:", error);
         throw error;
@@ -1889,7 +1905,7 @@ export async function getExpiredProducts(warehouseId?: string): Promise<ProductE
 
 // --- Alternative Products (Check Physical Warehouses) ---
 export async function findAlternativeProducts(productId: string, warehouseId?: string): Promise<Product[]> {
-    if (!db) { console.error("DB not available in findAlternativeProducts"); return []; }
+    const db = await getDB();
     try {
         // Get the original product to find its active ingredient
         const originalProduct = await getProductById(productId);
@@ -1900,8 +1916,8 @@ export async function findAlternativeProducts(productId: string, warehouseId?: s
         // Find alternatives with the same active ingredient, potentially in a specific warehouse
         // Ensure we cast quantity correctly if it's stored as VARCHAR
         let query = `
-            SELECT * FROM Products
-            WHERE id != ? AND activeIngredient = ? AND CAST(quantity AS REAL) > 0
+            SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products
+            WHERE id != ? AND activeIngredient = ? AND CAST(quantity AS DOUBLE) > 0
         `;
         const params: any[] = [productId, originalProduct.activeIngredient];
 
@@ -1910,7 +1926,7 @@ export async function findAlternativeProducts(productId: string, warehouseId?: s
             params.push(warehouseId);
         }
 
-        const results = await (await db).select(query, params);
+        const results = await db.select(query, params);
         return (results as any[]).map(mapProductData);
     } catch (error) {
         console.error(`Error finding alternatives for product ${productId}:`, error);
@@ -1920,22 +1936,18 @@ export async function findAlternativeProducts(productId: string, warehouseId?: s
 
 // Note: The following functions related to Treasury Transactions by Warehouse ID
 // have been removed as they are now redundant. Use the updated getTreasuryTransactions,
-// getTreasuryBalance, and addTreasuryTransaction functions with the treasuryId filter/parameter.
-
-// Update/Delete for TreasuryTransaction are simplified placeholders and might need adjustments based on requirements.
+// getTreasuryBalance, and addTreasuryTransaction functions with treasuryId filter/parameter.
 export async function updateTreasuryTransaction(id: string, updates: Partial<TreasuryTransaction>): Promise<TreasuryTransaction | null> {
-    if (!db) { throw new Error("DB not available in updateTreasuryTransaction"); }
+    const db = await getDB();
     // Fetch requires parsing amount back to number if you need to compare/use it
-    const currentTransactionData = (await (await db).select("SELECT * FROM TreasuryTransactions WHERE id = ?", [id]))?.[0];
-     if (!currentTransactionData) return null;
-     const currentTransaction = mapTreasuryTransactionData(currentTransactionData); // Use correct mapper
-
+    const currentTransactionData = (await db.select("SELECT id, type, CAST(amount AS CHAR) as amount, date, description, userId, relatedDocumentId, treasuryId FROM TreasuryTransactions WHERE id = ?", [id]))?.[0];
+    if (!currentTransactionData) return null;
+    const currentTransaction = mapTreasuryTransactionData(currentTransactionData); // Use correct mapper
 
     const { id: _, ...safeUpdates } = updates; // Exclude ID from updates
 
     const dbUpdates: { [key: string]: any } = {};
     const changedUpdates: Partial<TreasuryTransaction> = {}; // Track changes with original types
-
 
     for (const key in safeUpdates) {
         const typedKey = key as keyof typeof safeUpdates;
@@ -1944,43 +1956,45 @@ export async function updateTreasuryTransaction(id: string, updates: Partial<Tre
         let dbValue = newValue;
 
         if (typedKey === 'amount') {
-             // Only format if it's a string or number, not Date
-             if (typeof newValue === 'string' || typeof newValue === 'number') {
-                 const formatted = formatNumberForDB(newValue);
-                 dbValue = formatted !== null ? formatted : newValue;
-                 const originalFormatted = formatNumberForDB(originalValue as string | undefined);
-                 originalValue = originalFormatted !== null ? originalFormatted : originalValue;
-             } else {
-                 dbValue = newValue;
-                 originalValue = originalValue;
-             }
+            // Only format if it's a string or number, not Date
+            if (typeof newValue === 'string' || typeof newValue === 'number') {
+                const formatted = formatNumberForDB(newValue);
+                dbValue = formatted !== null ? formatted : newValue;
+                const originalFormatted = formatNumberForDB(originalValue as string | undefined);
+                originalValue = originalFormatted !== null ? originalFormatted : originalValue;
+            } else {
+                dbValue = newValue;
+                originalValue = originalValue;
+            }
         }
         if (typedKey === 'date') {
-             const formatted = formatDateTimeForDB(newValue as Date | undefined);
-             dbValue = formatted !== null ? formatted : newValue;
-             const originalFormatted = formatDateTimeForDB(originalValue as Date | undefined);
-             originalValue = originalFormatted !== null ? originalFormatted : originalValue;
+            const formatted = formatDateTimeForDB(newValue as Date | undefined);
+            dbValue = formatted !== null ? formatted : newValue;
+            const originalFormatted = formatDateTimeForDB(originalValue as Date | undefined);
+            originalValue = originalFormatted !== null ? originalFormatted : originalValue;
         }
         // Handle treasuryId like any other string field
+        if (typedKey === 'treasuryId') {
+            dbValue = newValue;
+            originalValue = originalValue;
+        }
 
-         // Compare potentially formatted DB values
-         if (String(dbValue) !== String(originalValue)) {
-             // Store original type change - cast to avoid type errors
-             (changedUpdates as any)[typedKey] = safeUpdates[typedKey];
-             dbUpdates[typedKey] = dbValue; // Store DB-formatted value
-         }
+        // Compare potentially formatted DB values
+        if (String(dbValue) !== String(originalValue)) {
+            // Store original type change - cast to avoid type errors
+            (changedUpdates as any)[typedKey] = safeUpdates[typedKey];
+            dbUpdates[typedKey] = dbValue; // Store DB-formatted value
+        }
     }
 
-
     if (Object.keys(dbUpdates).length === 0) return currentTransaction;
-
 
     const setClause = Object.keys(dbUpdates).map(key => `${key} = ?`).join(', ');
     const params = [...Object.values(dbUpdates), id];
     const query = `UPDATE TreasuryTransactions SET ${setClause} WHERE id = ?`;
 
     try {
-        await (await db).execute(query, params);
+        await db.execute(query, params);
         const updatedTransaction = { ...currentTransaction, ...changedUpdates };
         console.log("Updated Treasury Transaction (DB):", updatedTransaction);
         return updatedTransaction;
@@ -1992,11 +2006,11 @@ export async function updateTreasuryTransaction(id: string, updates: Partial<Tre
 
 // --- Delete Treasury Transaction (basic example) ---
 export async function deleteTreasuryTransaction(id: string): Promise<boolean> {
-    if (!db) { throw new Error("DB not available in deleteTreasuryTransaction"); }
+    const db = await getDB();
 
     const query = "DELETE FROM TreasuryTransactions WHERE id = ?";
     try {
-        const result = await (await db).execute(query, [id]);
+        const result = await db.execute(query, [id]);
         console.log(`Attempted deletion of Treasury Transaction ${id} (DB)`);
         return result.affectedRows > 0; // Assume success if execute doesn't throw
     } catch (error) {

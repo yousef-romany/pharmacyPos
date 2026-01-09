@@ -120,8 +120,9 @@ export type UserRole = 'admin' | 'manager' | 'seller' | 'accountant';
 
 export interface User {
   id: string;
+  username: string;
   name: string;
-  email: string;
+  email?: string; // Optional
   role: UserRole;
   passwordHash?: string; // Store the password hash (should not be exposed to client)
 }

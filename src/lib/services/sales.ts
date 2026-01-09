@@ -1,7 +1,19 @@
 import type { SaleTransaction } from '@/lib/types';
 import { saleRepository, type SaleTransactionWithItems, type SaleTransactionItem } from '@/lib/repositories/sales';
 import { executeWithTimingAndParams } from '../db/observability';
-import db from '../db';
+import { getDatabase } from '../db';
+
+/**
+ * Get database instance with error handling
+ */
+async function getDB() {
+    try {
+        return await getDatabase();
+    } catch (error) {
+        console.error("Database not available:", error);
+        throw new Error("Database not available");
+    }
+}
 
 /**
  * Sales Service
@@ -99,6 +111,7 @@ export class SalesService {
             FROM SalesTransactions
             ${whereClause}
         `;
+        const db = await getDB();
         const countResult = await executeWithTimingAndParams(
             () => db.execute(countSql, whereParams),
             'COUNT_SALES',
@@ -201,7 +214,7 @@ export class SalesService {
         const whereParams = this.buildWhereParams(filters);
 
         const summarySql = `
-            SELECT 
+            SELECT
                 COUNT(*) as saleCount,
                 COALESCE(SUM(CAST(totalAmount AS DECIMAL(10,2))), 0) as totalSales,
                 COALESCE(SUM(CAST(totalAmount AS DECIMAL(10,2))), 0) as totalRevenue,
@@ -210,6 +223,7 @@ export class SalesService {
             ${whereClause}
         `;
 
+        const db = await getDB();
         const result = await executeWithTimingAndParams(
             () => db.execute(summarySql, whereParams),
             'GET_SALES_SUMMARY',

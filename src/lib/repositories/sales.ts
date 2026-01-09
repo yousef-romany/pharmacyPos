@@ -1,7 +1,7 @@
 import { BaseRepository, Repository, QueryOptions } from './base';
 import { withTransaction, Transaction } from '../db/transaction';
 import { executeWithTimingAndParams } from '../db/observability';
-import db from '../db';
+import { getDatabase } from '../db';
 
 /**
  * Sale transaction with items
@@ -71,8 +71,9 @@ export class SaleRepositoryImpl extends BaseRepository<any, any, any> implements
    * Eliminates N+1 query pattern (FR-005)
    */
   async findByIdWithItems(id: string): Promise<SaleTransactionWithItems | null> {
+    const db = await getDatabase();
     const sql = `
-      SELECT 
+      SELECT
         s.id,
         s.customerId,
         s.totalAmount,
@@ -142,8 +143,9 @@ export class SaleRepositoryImpl extends BaseRepository<any, any, any> implements
    * Eliminates N+1 query pattern (FR-005)
    */
   async findAllWithItems(options: QueryOptions = {}): Promise<SaleTransactionWithItems[]> {
+    const db = await getDatabase();
     let sql = `
-      SELECT 
+      SELECT
         s.id,
         s.customerId,
         s.totalAmount,
@@ -229,8 +231,9 @@ export class SaleRepositoryImpl extends BaseRepository<any, any, any> implements
    * Find sales by date range with items
    */
   async findByDateRange(startDate: Date, endDate: Date): Promise<SaleTransactionWithItems[]> {
+    const db = await getDatabase();
     const sql = `
-      SELECT 
+      SELECT
         s.id,
         s.customerId,
         s.totalAmount,

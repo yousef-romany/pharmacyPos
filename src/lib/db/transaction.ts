@@ -1,4 +1,4 @@
-import db from '../db';
+import { getDatabase } from '../db';
 import { executeWithTiming } from './observability';
 
 /**
@@ -63,13 +63,22 @@ export async function withTransaction<T>(
 ): Promise<T> {
   const { isolationLevel = 'READ_COMMITTED', timeout = 30000 } = options;
   
+  const db = await getDatabase();
   let transaction: Transaction | null = null;
   const startTime = Date.now();
   let operationCount = 0;
 
   try {
     // BEGIN TRANSACTION with isolation level
-    const beginSql = `START TRANSACTION ISOLATION LEVEL ${isolationLevel}`;
+    // Set isolation level first, then start transaction
+    const setIsolationSql = `SET TRANSACTION ISOLATION LEVEL ${isolationLevel}`;
+    await executeWithTiming(
+      () => db.execute(setIsolationSql),
+      setIsolationSql,
+      'SET_ISOLATION'
+    );
+    
+    const beginSql = 'START TRANSACTION';
     await executeWithTiming(
       () => db.execute(beginSql),
       beginSql,

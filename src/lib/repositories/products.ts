@@ -1,7 +1,7 @@
 import type { Product } from '@/lib/types';
 import { BaseRepository, type Repository, withRetry } from './base';
 import { executeWithTimingAndParams } from '../db/observability';
-import db from '../db';
+import { getDatabase } from '../db';
 
 /**
  * Product Repository with optimistic concurrency control
@@ -69,6 +69,7 @@ export class ProductRepositoryImpl extends BaseRepository<Product, ProductCreate
      * Find a product by barcode
      */
     async findByBarcode(barcode: string): Promise<Product | undefined> {
+        const db = await getDatabase();
         const sql = `SELECT * FROM ${this.tableName} WHERE barcode = ? LIMIT 1`;
         const result = await executeWithTimingAndParams(
             () => db.execute(sql, [barcode]),
@@ -87,6 +88,7 @@ export class ProductRepositoryImpl extends BaseRepository<Product, ProductCreate
      * Find all products in a specific warehouse
      */
     async findByWarehouse(warehouseId: string): Promise<Product[]> {
+        const db = await getDatabase();
         const sql = `SELECT * FROM ${this.tableName} WHERE warehouseId = ?`;
         const result = await executeWithTimingAndParams(
             () => db.execute(sql, [warehouseId]),
@@ -101,7 +103,8 @@ export class ProductRepositoryImpl extends BaseRepository<Product, ProductCreate
      * Find products by active ingredient
      */
     async findByActiveIngredient(activeIngredient: string): Promise<Product[]> {
-        const sql = `SELECT * FROM ${this.tableName} WHERE activeIngredient = ? AND CAST(quantity AS REAL) > 0`;
+        const db = await getDatabase();
+        const sql = `SELECT * FROM ${this.tableName} WHERE activeIngredient = ? AND CAST(quantity AS DOUBLE) > 0`;
         const result = await executeWithTimingAndParams(
             () => db.execute(sql, [activeIngredient]),
             sql,
@@ -115,6 +118,7 @@ export class ProductRepositoryImpl extends BaseRepository<Product, ProductCreate
      * Find products nearing expiry
      */
     async findNearingExpiry(daysThreshold: number): Promise<Product[]> {
+        const db = await getDatabase();
         const sql = `
             SELECT * FROM ${this.tableName}
             WHERE expiryDate IS NOT NULL
@@ -134,6 +138,7 @@ export class ProductRepositoryImpl extends BaseRepository<Product, ProductCreate
      * Find expired products
      */
     async findExpired(): Promise<Product[]> {
+        const db = await getDatabase();
         const sql = `
             SELECT * FROM ${this.tableName}
             WHERE expiryDate IS NOT NULL AND expiryDate < CURDATE()
@@ -154,6 +159,7 @@ export class ProductRepositoryImpl extends BaseRepository<Product, ProductCreate
      */
     async updateStock(id: string, quantityDelta: number): Promise<Product | null> {
         return await withRetry(async () => {
+            const db = await getDatabase();
             // First, get current version
             const current = await this.findById(id);
             if (!current) return null;

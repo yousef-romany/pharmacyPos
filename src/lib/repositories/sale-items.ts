@@ -1,6 +1,6 @@
 import { BaseRepository, Repository } from './base';
 import { executeWithTimingAndParams } from '../db/observability';
-import db from '../db';
+import { getDatabase } from '../db';
 
 /**
  * Sale transaction item
@@ -64,6 +64,7 @@ export class SaleItemRepositoryImpl extends BaseRepository<SaleTransactionItem, 
    * Improves performance for multi-item sales (FR-007)
    */
   async createBatch(items: CreateSaleItemDTO[]): Promise<SaleTransactionItem[]> {
+    const db = await getDatabase();
     if (items.length === 0) {
       return [];
     }

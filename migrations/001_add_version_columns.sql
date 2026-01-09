@@ -20,21 +20,21 @@ AFTER quantity;
 -- Add index on version column for faster optimistic locking queries
 CREATE INDEX idx_products_version ON Products(version);
 
--- Add version column to SaleItems table
-ALTER TABLE SaleItems 
-ADD COLUMN version INT NOT NULL DEFAULT 0 
+-- Add version column to SaleTransactionItems table
+ALTER TABLE SaleTransactionItems
+ADD COLUMN version INT NOT NULL DEFAULT 0
 AFTER total;
 
 -- Add index on version column for faster optimistic locking queries
-CREATE INDEX idx_sale_items_version ON SaleItems(version);
+CREATE INDEX idx_sale_items_version ON SaleTransactionItems(version);
 
--- Add version column to PurchaseItems table
-ALTER TABLE PurchaseItems 
-ADD COLUMN version INT NOT NULL DEFAULT 0 
+-- Add version column to PurchaseTransactionItems table
+ALTER TABLE PurchaseTransactionItems
+ADD COLUMN version INT NOT NULL DEFAULT 0
 AFTER total;
 
 -- Add index on version column for faster optimistic locking queries
-CREATE INDEX idx_purchase_items_version ON PurchaseItems(version);
+CREATE INDEX idx_purchase_items_version ON PurchaseTransactionItems(version);
 
 -- Log migration completion
 SELECT 'Migration 001 completed: Version columns added to Products, SaleItems, PurchaseItems' AS status;

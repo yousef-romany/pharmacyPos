@@ -28,21 +28,13 @@ export interface SlowQueryLogEntry {
 
 /**
  * Pino logger configuration
- * - Pretty output for development
- * - JSON format for production
- * - Logs to file in logs/ directory
+ * - Simple JSON output (compatible with static export/Tauri environment)
+ * - Console-based logging to avoid file system issues in Tauri
+ * - Note: Transport and file destination removed for static export compatibility
  */
 const logger = pino({
   level: 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-      translateTime: 'SYS:standard',
-      ignore: 'pid,hostname',
-    },
-  },
-}, pino.destination({ dest: 'logs/slow-queries.ndjson', sync: false }));
+});
 
 /**
  * Execute a database query with timing and slow query logging

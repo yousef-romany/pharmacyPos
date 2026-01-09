@@ -30,17 +30,22 @@ export function ProductCard({ product }: ProductCardProps) {
 
   const canSellSubUnit = !!product.subUnitType && !!product.subUnitsPerUnit && product.subUnitsPerUnit > 0;
 
+  // Parse string values to numbers for calculations
+  const priceNum = parseFloat(product.price) || 0;
+  const quantityNum = parseFloat(product.quantity) || 0;
+  const discountRateNum = product.discountRate ? parseFloat(product.discountRate) : 0;
+
   // Calculate original prices
-  const originalMainUnitPrice = product.price;
-  const originalSubUnitPrice = canSellSubUnit ? (product.price / product.subUnitsPerUnit!) : null;
+  const originalMainUnitPrice = priceNum;
+  const originalSubUnitPrice = canSellSubUnit ? (priceNum / product.subUnitsPerUnit!) : null;
 
   // Calculate discounted prices
-  const discountedMainUnitPrice = applyDiscount(originalMainUnitPrice, product.discountRate);
-  const discountedSubUnitPrice = originalSubUnitPrice ? applyDiscount(originalSubUnitPrice, product.discountRate) : null;
+  const discountedMainUnitPrice = applyDiscount(originalMainUnitPrice, discountRateNum);
+  const discountedSubUnitPrice = originalSubUnitPrice ? applyDiscount(originalSubUnitPrice, discountRateNum) : null;
 
   // Calculate available quantity
-  const mainUnitsAvailable = Math.floor(product.quantity);
-  const subUnitsAvailable = canSellSubUnit ? Math.floor(product.quantity * product.subUnitsPerUnit!) : 0;
+  const mainUnitsAvailable = Math.floor(quantityNum);
+  const subUnitsAvailable = canSellSubUnit ? Math.floor(quantityNum * product.subUnitsPerUnit!) : 0;
 
   // Calculate expiry status
   const daysLeft = product.expiryDate ? calculateDaysUntilExpiry(new Date(product.expiryDate)) : null;
@@ -96,8 +101,8 @@ export function ProductCard({ product }: ProductCardProps) {
                   {isExpiringSoon && !isExpired && (
                        <span className="text-xs text-orange-600 font-medium flex items-center gap-1"><CalendarClock size={14}/> سينتهي قريباً</span>
                   )}
-                  {product.discountRate && product.discountRate > 0 && (
-                      <span className="text-xs text-green-600 font-medium flex items-center gap-1"><BadgePercent size={14}/> خصم {product.discountRate}%</span>
+                  {discountRateNum > 0 && (
+                      <span className="text-xs text-green-600 font-medium flex items-center gap-1"><BadgePercent size={14}/> خصم {discountRateNum}%</span>
                   )}
               </div>
            </div>
@@ -126,7 +131,7 @@ export function ProductCard({ product }: ProductCardProps) {
             <div className="border-t border-border/50 pt-2">
                 <p className="font-medium">
                     {product.subUnitType}:{' '}
-                     {product.discountRate ? (
+                     {discountRateNum > 0 ? (
                         <>
                            <span className="text-primary font-bold">{discountedSubUnitPrice.toFixed(2)} ر.س</span>
                            <span className="text-xs text-muted-foreground line-through ml-1">{originalSubUnitPrice.toFixed(2)}</span>
