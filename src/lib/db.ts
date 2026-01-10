@@ -15,8 +15,15 @@ let db: any | null = null;
 let dbPromise: Promise<any> | null = null;
 
 /**
+ * Check if we're in a Tauri environment with database available
+ */
+export function isDatabaseAvailable(): boolean {
+  return typeof window !== "undefined" && typeof Database !== "undefined";
+}
+
+/**
  * Get or initialize database connection
- * Ensures the database is properly initialized and cached
+ * Ensures that database is properly initialized and cached
  */
 export async function getDatabase(): Promise<any> {
   if (db) {
@@ -29,7 +36,7 @@ export async function getDatabase(): Promise<any> {
 
   dbPromise = (async () => {
     try {
-      if (typeof window !== "undefined" && Database) {
+      if (isDatabaseAvailable()) {
         db = await Database.load(DB_URL);
         return db;
       }

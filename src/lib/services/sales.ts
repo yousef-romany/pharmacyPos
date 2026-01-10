@@ -8,6 +8,12 @@ import { getDatabase } from '../db';
  */
 async function getDB() {
     try {
+        // Check if database is available before attempting to access it
+        const { isDatabaseAvailable } = await import('../db');
+        if (!isDatabaseAvailable()) {
+            console.warn("Database not available in current environment (SSR/development)");
+            throw new Error("Database not available in current environment");
+        }
         return await getDatabase();
     } catch (error) {
         console.error("Database not available:", error);

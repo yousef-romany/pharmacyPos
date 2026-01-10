@@ -14,7 +14,7 @@ export interface Transaction {
  * Transaction options
  */
 export interface TransactionOptions {
-  isolationLevel?: 'READ_COMMITTED' | 'REPEATABLE_READ' | 'SERIALIZABLE';
+  isolationLevel?: 'READ COMMITTED' | 'REPEATABLE READ' | 'SERIALIZABLE';
   timeout?: number;
 }
 
@@ -61,7 +61,7 @@ export async function withTransaction<T>(
   operation: (tx: Transaction) => Promise<T>,
   options: TransactionOptions = {}
 ): Promise<T> {
-  const { isolationLevel = 'READ_COMMITTED', timeout = 30000 } = options;
+  const { isolationLevel = 'READ COMMITTED', timeout = 30000 } = options;
   
   const db = await getDatabase();
   let transaction: Transaction | null = null;
