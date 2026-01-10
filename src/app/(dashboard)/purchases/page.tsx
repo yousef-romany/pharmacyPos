@@ -13,8 +13,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { Truck, Eye, Printer, PlusCircle, CheckCircle, XCircle, AlertCircle as AlertCircleIcon, Trash2 } from 'lucide-react'; // Added icons, Trash2
-import type { PurchaseTransaction, PurchaseTransactionItem, Supplier, PaymentStatus, Warehouse } from '@/lib/types'; // Import types including Warehouse
+import { Truck, Eye, Printer, PlusCircle, CheckCircle, XCircle, AlertCircle as AlertCircleIcon, Trash2, Coins, CreditCard, Landmark } from 'lucide-react'; // Added payment method icons
+import type { PurchaseTransaction, PurchaseTransactionItem, Supplier, PaymentStatus, Warehouse, PaymentMethod } from '@/lib/types'; // Import types including Warehouse and PaymentMethod
 import { getPurchases, getSuppliers, getProductNameById, addPurchase, getProductById, deletePurchase, getWarehouses } from '@/lib/data'; // Import data fetching functions, add deletePurchase, getWarehouses
 import {
   Dialog,
@@ -95,7 +95,7 @@ function PurchaseDetailsDialog({ purchase, supplierName, warehouseMap, onClose }
 
     if (!purchase) return null;
 
-     // Map Payment Status to Badge Variant and Text
+    // Map Payment Status to Badge Variant and Text
     const getPaymentStatusInfo = (status: PaymentStatus) => {
         switch (status) {
             case 'paid': return { variant: 'default', text: 'مدفوع', icon: CheckCircle, color: 'text-green-600' };
@@ -104,7 +104,19 @@ function PurchaseDetailsDialog({ purchase, supplierName, warehouseMap, onClose }
             default: return { variant: 'outline', text: status, icon: AlertCircleIcon, color: 'text-muted-foreground' };
         }
     };
-    const paymentInfo = getPaymentStatusInfo(purchase.paymentStatus);
+
+    // Map Payment Method to Icon and Text
+    const getPaymentMethodInfo = (method?: PaymentMethod) => {
+        switch (method) {
+            case 'cash': return { text: 'نقداً', icon: Coins, color: 'text-green-600' };
+            case 'card': return { text: 'بطاقة', icon: CreditCard, color: 'text-blue-600' };
+            case 'debt': return { text: 'آجل/مديونية', icon: Landmark, color: 'text-red-600' };
+            default: return { text: 'غير محدد', icon: Coins, color: 'text-muted-foreground' };
+        }
+    };
+
+    const paymentStatusInfo = getPaymentStatusInfo(purchase.paymentStatus);
+    const paymentMethodInfo = getPaymentMethodInfo(purchase.paymentMethod);
     const totalAmountNum = safeParseFloat(purchase.totalAmount);
     const amountPaidNum = safeParseFloat(purchase.amountPaid);
 
@@ -170,6 +182,7 @@ function PurchaseDetailsDialog({ purchase, supplierName, warehouseMap, onClose }
                         <p><strong>رقم فاتورة المورد:</strong> ${purchase.invoiceNumber || '-'}</p>
                         <p><strong>المورد:</strong> ${supplierName || purchase.supplierId}</p>
                         <p><strong>التاريخ:</strong> ${new Date(purchase.date).toLocaleDateString('ar-SA')}</p>
+                        <p><strong>طريقة الدفع:</strong> ${paymentMethodInfo.text}</p>
                         <p><strong>مخزن الوجهة:</strong> ${warehouseMap.get(purchase.destinationWarehouseId || '') || '-'}</p> {/* Display overall warehouse */}
                      </div>
                      <table>
@@ -188,7 +201,7 @@ function PurchaseDetailsDialog({ purchase, supplierName, warehouseMap, onClose }
                         </tbody>
                      </table>
                      <div class="totals">
-                        <div><span>حالة الدفع:</span> <span class="payment-status">${paymentInfo.text}</span></div>
+                        <div><span>حالة الدفع:</span> <span class="payment-status">${paymentStatusInfo.text}</span></div>
                         <div><span>المبلغ المدفوع:</span> ${amountPaidNum.toFixed(2)} ر.س</div>
                         <div><span>المبلغ المتبقي:</span> ${(totalAmountNum - amountPaidNum).toFixed(2)} ر.س</div>
                         <div><strong>إجمالي الفاتورة:</strong> <strong>${totalAmountNum.toFixed(2)} ر.س</strong></div>
@@ -216,10 +229,16 @@ function PurchaseDetailsDialog({ purchase, supplierName, warehouseMap, onClose }
                     <p><strong className="ml-1">تاريخ الفاتورة:</strong> {format(new Date(purchase.date), 'PPP', { locale: arSA })}</p>
                     <p><strong className="ml-1">رقم فاتورة المورد:</strong> {purchase.invoiceNumber || '-'}</p>
                      <p><strong className="ml-1">مخزن الوجهة:</strong> {warehouseMap.get(purchase.destinationWarehouseId || '') || '-'}</p>
+                    <p><strong className="ml-1">طريقة الدفع:</strong>
+                       <Badge variant="outline" className={cn("mr-1 px-1.5 py-0.5 text-xs", paymentMethodInfo.color)}>
+                           <paymentMethodInfo.icon className="ml-1 h-3 w-3" />
+                           {paymentMethodInfo.text}
+                       </Badge>
+                    </p>
                     <p><strong className="ml-1">حالة الدفع:</strong>
-                       <Badge variant={paymentInfo.variant} className={cn("mr-1 px-1.5 py-0.5 text-xs", paymentInfo.color)}>
-                            <paymentInfo.icon className="ml-1 h-3 w-3" />
-                            {paymentInfo.text}
+                       <Badge variant={paymentStatusInfo.variant as any} className={cn("mr-1 px-1.5 py-0.5 text-xs", paymentStatusInfo.color)}>
+                            <paymentStatusInfo.icon className="ml-1 h-3 w-3" />
+                            {paymentStatusInfo.text}
                         </Badge>
                     </p>
 
@@ -399,6 +418,16 @@ export default function PurchasesPage() {
         }
     };
 
+    // Map Payment Method to Icon and Text
+    const getPaymentMethodInfo = (method?: PaymentMethod) => {
+        switch (method) {
+            case 'cash': return { text: 'نقداً', icon: Coins, color: 'text-green-600' };
+            case 'card': return { text: 'بطاقة', icon: CreditCard, color: 'text-blue-600' };
+            case 'debt': return { text: 'آجل/مديونية', icon: Landmark, color: 'text-red-600' };
+            default: return { text: 'غير محدد', icon: Coins, color: 'text-muted-foreground' };
+        }
+    };
+
   return (
      <AlertDialog> {/* Wrap with AlertDialog for delete confirmation */}
         {/* Dialog for Add Purchase Form */}
@@ -445,6 +474,7 @@ export default function PurchasesPage() {
                           <TableHead>تاريخ الفاتورة</TableHead>
                           <TableHead>إجمالي المبلغ</TableHead>
                            <TableHead>مخزن الوجهة</TableHead> {/* Added Warehouse column header */}
+                          <TableHead>طريقة الدفع</TableHead> {/* Added Payment Method column header */}
                           <TableHead>حالة الدفع</TableHead>
                            <TableHead>عدد الأصناف</TableHead>
                           <TableHead className="text-right">إجراءات</TableHead>
@@ -453,13 +483,14 @@ export default function PurchasesPage() {
                       <TableBody>
                         {isLoading ? (
                           <TableRow>
-                            <TableCell colSpan={9} className="h-24 text-center"> {/* Adjusted colspan */}
+                            <TableCell colSpan={10} className="h-24 text-center"> {/* Adjusted colspan for new column */}
                               جاري تحميل الفواتير...
                             </TableCell>
                           </TableRow>
                         ) : filteredPurchases.length > 0 ? (
                           filteredPurchases.map((purchase) => {
-                               const paymentInfo = getPaymentStatusInfo(purchase.paymentStatus);
+                               const paymentStatusInfo = getPaymentStatusInfo(purchase.paymentStatus);
+                               const paymentMethodInfo = getPaymentMethodInfo(purchase.paymentMethod);
                                const totalAmountNum = safeParseFloat(purchase.totalAmount);
                                const destinationWarehouseName = warehouseMap.get(purchase.destinationWarehouseId || '') || '-';
                                return (
@@ -471,9 +502,15 @@ export default function PurchasesPage() {
                                        <TableCell>{totalAmountNum.toFixed(2)}</TableCell>
                                        <TableCell>{destinationWarehouseName}</TableCell> {/* Display warehouse name */}
                                        <TableCell>
-                                            <Badge variant={paymentInfo.variant} className={cn("px-1.5 py-0.5 text-xs", paymentInfo.color)}>
-                                                <paymentInfo.icon className="ml-1 h-3 w-3" />
-                                                {paymentInfo.text}
+                                           <Badge variant="outline" className={cn("px-1.5 py-0.5 text-xs", paymentMethodInfo.color)}>
+                                               <paymentMethodInfo.icon className="ml-1 h-3 w-3" />
+                                               {paymentMethodInfo.text}
+                                           </Badge>
+                                       </TableCell>
+                                       <TableCell>
+                                            <Badge variant={paymentStatusInfo.variant as any} className={cn("px-1.5 py-0.5 text-xs", paymentStatusInfo.color)}>
+                                                <paymentStatusInfo.icon className="ml-1 h-3 w-3" />
+                                                {paymentStatusInfo.text}
                                             </Badge>
                                        </TableCell>
                                        <TableCell>{purchase.items.length}</TableCell>

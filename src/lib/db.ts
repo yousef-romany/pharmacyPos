@@ -24,8 +24,14 @@ export function isDatabaseAvailable(): boolean {
 /**
  * Get or initialize database connection
  * Ensures that database is properly initialized and cached
+ * Returns null if database is not available (e.g., during SSR)
  */
-export async function getDatabase(): Promise<any> {
+export async function getDatabase(): Promise<any | null> {
+  // Early return if not in browser environment
+  if (typeof window === "undefined") {
+    return null;
+  }
+
   if (db) {
     return db;
   }
@@ -40,10 +46,11 @@ export async function getDatabase(): Promise<any> {
         db = await Database.load(DB_URL);
         return db;
       }
-      throw new Error('Database not available: running in non-browser environment or plugin not loaded');
+      console.warn('Database not available: running in non-browser environment or plugin not loaded');
+      return null;
     } catch (error) {
       console.error("Error loading database:", error);
-      throw error;
+      return null;
     }
   })();
 

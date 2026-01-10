@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Landmark, DollarSign, ArrowRightLeft, PlusCircle, MinusCircle, Loader2, TrendingUp, TrendingDown, Banknote, Pencil, Trash2 as TrashIcon } from 'lucide-react'; // Use Banknote for Treasury icon, added Edit/Delete
+import { Landmark, DollarSign, ArrowRightLeft, PlusCircle, MinusCircle, Loader2, TrendingUp, TrendingDown, Banknote, Pencil, Trash2 as TrashIcon, Filter, Coins, CreditCard, Smartphone, Wallet, Calendar } from 'lucide-react'; // Added payment method icons
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -17,7 +17,7 @@ import { format } from 'date-fns';
 import { arSA } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { getTreasuryBalance, getTreasuryTransactions, addTreasuryTransaction, getTreasuries, addTreasury, updateTreasury, deleteTreasury } from '@/lib/data'; // Import Treasury CRUD functions
-import type { TreasuryTransaction, TreasuryTransactionType, Treasury } from '@/lib/types'; // Import Treasury type
+import type { TreasuryTransaction, TreasuryTransactionType, Treasury, PaymentMethod } from '@/lib/types'; // Import Treasury and PaymentMethod type
 import {
   Dialog,
   DialogContent,
@@ -66,6 +66,7 @@ function TreasuryForm({ initialData, onSubmit, onClose }: TreasuryFormProps) {
     name: initialData?.name || '',
     description: initialData?.description || '',
     isDefault: initialData?.isDefault || false,
+    paymentMethodType: initialData?.paymentMethodType || undefined,
   });
   const [isLoading, setIsLoading] = React.useState(false);
 
@@ -106,6 +107,48 @@ function TreasuryForm({ initialData, onSubmit, onClose }: TreasuryFormProps) {
       <div>
         <Label htmlFor="description">الوصف (اختياري)</Label>
         <Textarea id="description" name="description" value={formData.description || ''} onChange={handleChange} />
+      </div>
+      <div>
+        <Label htmlFor="paymentMethodType">نوع طريقة الدفع (اختياري)</Label>
+        <Select
+          value={formData.paymentMethodType || 'none'}
+          onValueChange={(value) => setFormData(prev => ({ ...prev, paymentMethodType: value === 'none' ? undefined : value as PaymentMethod }))}
+        >
+          <SelectTrigger id="paymentMethodType">
+            <SelectValue placeholder="اختر نوع طريقة الدفع..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">غير محدد (خزينة عامة)</SelectItem>
+            <SelectItem value="cash">
+              <div className="flex items-center gap-2">
+                <Coins className="h-4 w-4" /> نقداً
+              </div>
+            </SelectItem>
+            <SelectItem value="card">
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-4 w-4" /> بطاقة
+              </div>
+            </SelectItem>
+            <SelectItem value="instapay">
+              <div className="flex items-center gap-2">
+                <Smartphone className="h-4 w-4" /> إنستا باي
+              </div>
+            </SelectItem>
+            <SelectItem value="vodafone_cash">
+              <div className="flex items-center gap-2">
+                <Wallet className="h-4 w-4" /> فودافون كاش
+              </div>
+            </SelectItem>
+            <SelectItem value="debt">
+              <div className="flex items-center gap-2">
+                <Landmark className="h-4 w-4" /> آجل/مديونية
+              </div>
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground mt-1">
+          ربط الخزينة بطريقة دفع محددة (مثلاً: حساب إنستا باي 1، حساب إنستا باي 2)
+        </p>
       </div>
       <div className="flex items-center space-x-2">
         <Checkbox id="isDefault" name="isDefault" checked={formData.isDefault} onCheckedChange={handleCheckboxChange} />
@@ -236,6 +279,7 @@ export default function TreasuryPage() {
   const [transactions, setTransactions] = React.useState<TreasuryTransaction[]>([]);
   const [allTreasuries, setAllTreasuries] = React.useState<Treasury[]>([]); // State for financial accounts
   const [selectedTreasuryFilter, setSelectedTreasuryFilter] = React.useState<string | undefined>(undefined); // Filter state for treasury
+  const [selectedTypeFilter, setSelectedTypeFilter] = React.useState<TreasuryTransactionType | 'all'>('all'); // Filter by transaction type
   const [isLoadingBalance, setIsLoadingBalance] = React.useState(true);
   const [isLoadingTransactions, setIsLoadingTransactions] = React.useState(true);
   const [isLoadingTreasuries, setIsLoadingTreasuries] = React.useState(true);
@@ -387,6 +431,35 @@ export default function TreasuryPage() {
         return allTreasuries.find(t => t.id === id)?.name || id.substring(0,6);
      };
 
+    // Filter transactions by type
+    const filteredTransactions = React.useMemo(() => {
+        if (selectedTypeFilter === 'all') return transactions;
+        return transactions.filter(tx => tx.type === selectedTypeFilter);
+    }, [transactions, selectedTypeFilter]);
+
+    // Calculate statistics by payment type
+    const paymentStats = React.useMemo(() => {
+        const stats = {
+            cash: 0,
+            card: 0,
+            instapay: 0,
+            vodafone_cash: 0,
+            debt: 0,
+        };
+
+        transactions.forEach(tx => {
+            const amount = parseFloatFromDB(tx.amount);
+            // Only count sale_payment transactions for payment statistics
+            if (tx.type === 'sale_payment' && amount > 0) {
+                // We need to get the payment method from the related sale
+                // For now, we'll show all sale payments combined
+                // You might want to extend TreasuryTransaction to include paymentMethod
+            }
+        });
+
+        return stats;
+    }, [transactions]);
+
   return (
      <AlertDialog> {/* Outer wrapper for Delete confirmation */}
         <Dialog> {/* Base Dialog for modals */}
@@ -491,15 +564,35 @@ export default function TreasuryPage() {
                              <TableHeader>
                                 <TableRow>
                                     <TableHead>اسم الخزنة/الحساب</TableHead>
+                                    <TableHead>نوع طريقة الدفع</TableHead>
                                     <TableHead>الوصف</TableHead>
                                     <TableHead>افتراضي؟</TableHead>
                                     <TableHead className="text-right">إجراءات</TableHead>
                                 </TableRow>
                              </TableHeader>
                              <TableBody>
-                                {allTreasuries.map(t => (
+                                {allTreasuries.map(t => {
+                                    const paymentMethodMap: Record<string, { label: string; icon: React.ElementType }> = {
+                                        'cash': { label: 'نقداً', icon: Coins },
+                                        'card': { label: 'بطاقة', icon: CreditCard },
+                                        'instapay': { label: 'إنستا باي', icon: Smartphone },
+                                        'vodafone_cash': { label: 'فودافون كاش', icon: Wallet },
+                                        'debt': { label: 'آجل', icon: Landmark },
+                                    };
+                                    const methodInfo = t.paymentMethodType ? paymentMethodMap[t.paymentMethodType] : null;
+                                    const MethodIcon = methodInfo?.icon;
+
+                                    return (
                                     <TableRow key={t.id}>
                                         <TableCell>{t.name}</TableCell>
+                                        <TableCell>
+                                            {methodInfo ? (
+                                                <div className="flex items-center gap-2">
+                                                    {MethodIcon && <MethodIcon className="h-4 w-4 text-muted-foreground" />}
+                                                    {methodInfo.label}
+                                                </div>
+                                            ) : '-'}
+                                        </TableCell>
                                         <TableCell>{t.description || '-'}</TableCell>
                                         <TableCell>{t.isDefault ? 'نعم' : 'لا'}</TableCell>
                                         <TableCell className="text-right space-x-1">
@@ -515,7 +608,8 @@ export default function TreasuryPage() {
                                              </AlertDialogTrigger>
                                         </TableCell>
                                     </TableRow>
-                                ))}
+                                    );
+                                })}
                              </TableBody>
                          </Table>
                         </div>
@@ -526,11 +620,100 @@ export default function TreasuryPage() {
                </Card>
 
 
+              {/* Payment Methods Statistics */}
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-medium text-muted-foreground">نقداً</CardTitle>
+                      <Coins className="h-4 w-4 text-green-600" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-green-700">{filteredTransactions.filter(tx => tx.type === 'sale_payment' && tx.description?.includes('نقداً')).reduce((sum, tx) => sum + parseFloatFromDB(tx.amount), 0).toFixed(2)}</div>
+                    <p className="text-xs text-muted-foreground mt-1">ر.س</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-medium text-muted-foreground">بطاقة</CardTitle>
+                      <CreditCard className="h-4 w-4 text-blue-600" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-blue-700">{filteredTransactions.filter(tx => tx.type === 'sale_payment' && tx.description?.includes('بطاقة')).reduce((sum, tx) => sum + parseFloatFromDB(tx.amount), 0).toFixed(2)}</div>
+                    <p className="text-xs text-muted-foreground mt-1">ر.س</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-medium text-muted-foreground">إنستا باي</CardTitle>
+                      <Smartphone className="h-4 w-4 text-purple-600" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-purple-700">{filteredTransactions.filter(tx => tx.type === 'sale_payment' && tx.description?.includes('إنستا')).reduce((sum, tx) => sum + parseFloatFromDB(tx.amount), 0).toFixed(2)}</div>
+                    <p className="text-xs text-muted-foreground mt-1">ر.س</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-medium text-muted-foreground">فودافون كاش</CardTitle>
+                      <Wallet className="h-4 w-4 text-red-600" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-red-700">{filteredTransactions.filter(tx => tx.type === 'sale_payment' && tx.description?.includes('فودافون')).reduce((sum, tx) => sum + parseFloatFromDB(tx.amount), 0).toFixed(2)}</div>
+                    <p className="text-xs text-muted-foreground mt-1">ر.س</p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm font-medium text-muted-foreground">آجل</CardTitle>
+                      <Landmark className="h-4 w-4 text-orange-600" />
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-orange-700">{filteredTransactions.filter(tx => tx.type === 'sale_payment' && tx.description?.includes('آجل')).reduce((sum, tx) => sum + parseFloatFromDB(tx.amount), 0).toFixed(2)}</div>
+                    <p className="text-xs text-muted-foreground mt-1">ر.س</p>
+                  </CardContent>
+                </Card>
+              </div>
+
                <Card>
                 <CardHeader>
-                  <CardTitle>حركة الخزنة الأخيرة ({getTreasuryName(selectedTreasuryFilter === 'all' ? undefined : selectedTreasuryFilter)})</CardTitle>
-                   <CardDescription>سجل آخر العمليات التي تمت على الخزنة المحددة.</CardDescription>
-                    {/* TODO: Add More Filters (Date Range, Type, etc.) */}
+                  <div className="flex flex-wrap justify-between items-start gap-4">
+                    <div>
+                      <CardTitle>كشف حساب الخزنة ({getTreasuryName(selectedTreasuryFilter === 'all' ? undefined : selectedTreasuryFilter)})</CardTitle>
+                      <CardDescription>سجل جميع العمليات التي تمت على الخزنة المحددة.</CardDescription>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                      <Filter className="h-4 w-4 text-muted-foreground" />
+                      <Select value={selectedTypeFilter} onValueChange={(value) => setSelectedTypeFilter(value as TreasuryTransactionType | 'all')}>
+                        <SelectTrigger className="w-[200px]">
+                          <SelectValue placeholder="فلتر حسب النوع" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">جميع العمليات</SelectItem>
+                          <SelectItem value="deposit">إيداع</SelectItem>
+                          <SelectItem value="withdrawal">سحب</SelectItem>
+                          <SelectItem value="sale_payment">دفعة مبيعات</SelectItem>
+                          <SelectItem value="purchase_payment">دفعة مشتريات</SelectItem>
+                          <SelectItem value="expense">مصروفات</SelectItem>
+                          <SelectItem value="transfer_in">تحويل وارد</SelectItem>
+                          <SelectItem value="transfer_out">تحويل صادر</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 </CardHeader>
                 <CardContent>
                    <div className="rounded-md border">
@@ -557,8 +740,8 @@ export default function TreasuryPage() {
                                <TableCell><Skeleton className="h-4 w-20" /></TableCell> {/* Skeleton for treasury */}
                             </TableRow>
                           ))
-                        ) : transactions.length > 0 ? (
-                          transactions.map((tx) => {
+                        ) : filteredTransactions.length > 0 ? (
+                          filteredTransactions.map((tx) => {
                             const amount = parseFloatFromDB(tx.amount);
                             const isPositive = amount > 0;
                             const transactionTypeMap: Record<TreasuryTransactionType, string> = {

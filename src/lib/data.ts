@@ -1,4 +1,4 @@
-import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User, ProductExpiryInfo, InventoryReportItem, PaymentMethod, PaymentStatus, UserRole, TreasuryTransaction, TreasuryTransactionType, Warehouse, Treasury } from '@/lib/types'; // Added Treasury type
+import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction, PurchaseTransactionItem, SaleTransactionItem, User, ProductExpiryInfo, InventoryReportItem, PaymentMethod, PaymentStatus, UserRole, TreasuryTransaction, TreasuryTransactionType, Warehouse, Treasury, DrugCategory, EgyptianDrug, InvoiceLanguage, InvoiceTemplate, InvoiceTranslation, CustomerPreference } from '@/lib/types'; // Added Egyptian drugs and invoice types
 import { Pill, Baby, SprayCan, Activity, LucideIcon } from 'lucide-react';
 import { differenceInDays, addDays, isBefore, isSameDay, startOfDay, endOfDay, format as formatDate } from 'date-fns'; // Import format from date-fns
 import { getDatabase } from '@/lib/db'; // Import potentially initialized database instance
@@ -12,18 +12,11 @@ import { saleRepository } from './repositories/sales';
  * Helper to simplify database access throughout the file
  */
 async function getDB() {
-    try {
-        // Check if database is available before attempting to access it
-        const { isDatabaseAvailable } = await import('@/lib/db');
-        if (!isDatabaseAvailable()) {
-            console.warn("Database not available in current environment (SSR/development)");
-            throw new Error("Database not available in current environment");
-        }
-        return await getDatabase();
-    } catch (error) {
-        console.error("Database not available:", error);
-        throw new Error("Database not available");
+    const db = await getDatabase();
+    if (!db) {
+        throw new Error("Database not available in current environment");
     }
+    return db;
 }
 
 // Helper function to format Date object to 'YYYY-MM-DD' string for DB DATE columns
@@ -231,6 +224,7 @@ const mapWarehouseData = (warehouse: any): Warehouse => ({
 const mapTreasuryData = (treasury: any): Treasury => ({
     ...treasury,
     isDefault: parseBooleanFromDB(treasury.isDefault), // Parse boolean
+    paymentMethodType: treasury.paymentMethodType || undefined, // Keep payment method type
     // openingBalance: treasury.openingBalance, // Keep as string if stored
 });
 
@@ -631,7 +625,6 @@ export async function getPurchaseById(id: string): Promise<PurchaseTransaction |
 }
 
 export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' | 'totalAmount' | 'paymentStatus'>): Promise<PurchaseTransaction> {
-    const db = await getDB();
     const newPurchaseId = `pur-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
 
     // Determine target warehouse for purchase
@@ -665,7 +658,7 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' |
         const purchaseQuery = `
            INSERT INTO PurchaseTransactions (
                 id, supplierId, totalAmount, paymentStatus, amountPaid, date, invoiceNumber, destinationWarehouseId, paymentTreasuryId
-           ) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const purchaseParams = [
            newPurchaseId,
@@ -687,7 +680,7 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' |
               console.log(`Processing item: Product ID ${item.productId}, Qty: ${item.quantity}, Cost: ${item.cost}, Expiry: ${item.expiryDate}`);
             const itemQuery = `
                 INSERT INTO PurchaseTransactionItems (purchaseId, productId, quantity, cost, expiryDate)
-                VALUES (?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?)
             `;
             const formattedExpiry = formatDateForDB(item.expiryDate); // Use DATE format for expiry
             const itemParams = [
@@ -759,13 +752,41 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' |
             }
         }
 
-         // 4. Add Treasury Transaction for the payment made from the correct treasury
-          if (amountPaidNum > 0) {
+         // 4. Add Treasury Transactions for the payments (split payment support)
+          if (purchaseData.payments && purchaseData.payments.length > 0) {
+              console.log(`Processing ${purchaseData.payments.length} payments...`);
+              for (const payment of purchaseData.payments) {
+                  const paymentAmount = parseFloatFromDB(payment.amount);
+                  if (paymentAmount > 0) {
+                      await addTreasuryTransaction({
+                          type: 'purchase_payment',
+                          amount: formatNumberForDB(-paymentAmount)!, // Pass as string, ensure it's negative (outgoing)
+                          date: purchaseData.date, // Use the same date as the purchase
+                          description: `دفعة لمورد ${purchaseData.supplierId} - فاتورة ${newPurchaseId}`,
+                          relatedDocumentId: newPurchaseId,
+                          treasuryId: payment.treasuryId, // Link to the specific treasury
+                      });
+                      console.log(`Added treasury transaction for ${paymentAmount} from treasury ${payment.treasuryId}`);
+                  }
+              }
+          }
+          // Legacy support: single payment method (backward compatibility)
+          else if (purchaseData.amountPaid && amountPaidNum > 0) {
+             // Map payment method to Arabic
+             const paymentMethodMap: Record<string, string> = {
+                 'cash': 'نقداً',
+                 'card': 'بطاقة',
+                 'instapay': 'إنستا باي',
+                 'vodafone_cash': 'فودافون كاش',
+                 'debt': 'آجل'
+             };
+             const paymentMethodLabel = purchaseData.paymentMethod ? paymentMethodMap[purchaseData.paymentMethod] || purchaseData.paymentMethod : 'نقداً';
+
              await addTreasuryTransaction({
                  type: 'purchase_payment',
                  amount: formatNumberForDB(-amountPaidNum)!, // Pass as string, ensure it's negative
                  date: purchaseData.date, // Use the same date as the purchase
-                 description: `دفعة لمورد ${purchaseData.supplierId} - فاتورة ${newPurchaseId}`,
+                 description: `دفعة لمورد ${purchaseData.supplierId} - فاتورة ${newPurchaseId} - ${paymentMethodLabel}`,
                  relatedDocumentId: newPurchaseId,
                  treasuryId: targetTreasuryId, // Associate with the paying treasury
              });
@@ -1073,7 +1094,6 @@ export async function getSaleById(id: string): Promise<SaleTransaction | undefin
 }
 
 export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<SaleTransaction> {
-    const db = await getDB();
     const newSaleId = `sale-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
 
     // Determine source warehouse (e.g., from user session, POS setting, or default)
@@ -1095,7 +1115,7 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
                 id, customerId, totalAmount, originalTotalAmount, subTotalAmount,
                 paymentMethod, amountPaid, date, appliedInsuranceDiscountRate,
                 saleWarehouseId, paymentTreasuryId
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const saleParams = [
             newSaleId,
@@ -1136,9 +1156,9 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
               }
 
              const itemQuery = `
-                INSERT INTO SaleTransactionItems (saleId, productId, quantity, price, soldUnitType, costAtSale, warehouseId)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            `;
+               INSERT INTO SaleTransactionItems (saleId, productId, quantity, price, soldUnitType, costAtSale, warehouseId)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+           `;
              const itemParams = [
                 newSaleId,
                 item.productId,
@@ -1204,13 +1224,40 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
               }
          }
 
-         // 4. Add Treasury Transaction for the payment received into the target treasury
-          if (parseFloatFromDB(saleData.amountPaid) > 0) {
+         // 4. Add Treasury Transactions for the payments (split payment support)
+          if (saleData.payments && saleData.payments.length > 0) {
+              console.log(`Processing ${saleData.payments.length} payments...`);
+              for (const payment of saleData.payments) {
+                  const paymentAmount = parseFloatFromDB(payment.amount);
+                  if (paymentAmount > 0) {
+                      await addTreasuryTransaction({
+                          type: 'sale_payment',
+                          amount: formatNumberForDB(paymentAmount)!, // Pass as string, ensure it's positive
+                          date: saleData.date, // Use the same date as the sale
+                          description: `دفعة من فاتورة بيع ${newSaleId}`,
+                          relatedDocumentId: newSaleId,
+                          treasuryId: payment.treasuryId, // Link to the specific treasury
+                      });
+                      console.log(`Added treasury transaction for ${paymentAmount} to treasury ${payment.treasuryId}`);
+                  }
+              }
+          }
+          // Legacy support: single payment method (backward compatibility)
+          else if (saleData.amountPaid && parseFloatFromDB(saleData.amountPaid) > 0) {
+              const paymentMethodMap: Record<string, string> = {
+                  'cash': 'نقداً',
+                  'card': 'بطاقة',
+                  'instapay': 'إنستا باي',
+                  'vodafone_cash': 'فودافون كاش',
+                  'debt': 'آجل'
+              };
+              const paymentMethodLabel = saleData.paymentMethod ? paymentMethodMap[saleData.paymentMethod] || saleData.paymentMethod : '';
+
               await addTreasuryTransaction({
                   type: 'sale_payment',
                   amount: formatNumberForDB(saleData.amountPaid)!, // Pass as string, ensure it's positive
                   date: saleData.date, // Use the same date as the sale
-                  description: `دفعة من فاتورة بيع ${newSaleId}`,
+                  description: `دفعة من فاتورة بيع ${newSaleId} - ${paymentMethodLabel}`,
                   relatedDocumentId: newSaleId,
                   treasuryId: targetTreasuryId, // Link to the receiving treasury
               });
@@ -1492,7 +1539,7 @@ export async function addUser(userData: Omit<User, 'id' | 'passwordHash'> & { pa
 
     const query = `
         INSERT INTO Users (id, username, name, email, role, passwordHash)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
     `;
     const params = [newId, userData.username, userData.name, userData.email, userData.role, passwordHash];
     try {
@@ -1580,13 +1627,14 @@ export async function addTreasury(treasuryData: Omit<Treasury, 'id'>): Promise<T
     }
 
     const query = `
-        INSERT INTO Treasuries (id, name, description, isDefault)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO Treasuries (id, name, description, paymentMethodType, isDefault)
+        VALUES (?, ?, ?, ?, ?)
     `;
     const params = [
         newId,
         treasuryData.name,
         treasuryData.description,
+        treasuryData.paymentMethodType || null,
         treasuryData.isDefault ? 1 : 0,
     ];
     try {
@@ -2022,5 +2070,269 @@ export async function deleteTreasuryTransaction(id: string): Promise<boolean> {
     } catch (error) {
         console.error(`Error deleting treasury transaction ${id}:`, error);
         throw error; // Re-throw
+    }
+}
+
+// ====================================================================
+// Egyptian Drugs Database Operations
+// عمليات قاعدة بيانات الأدوية المصرية
+// ====================================================================
+
+// Get all drug categories
+export async function getDrugCategories(): Promise<DrugCategory[]> {
+    const db = await getDB();
+    try {
+        const results = await db.select("SELECT * FROM DrugCategories ORDER BY categoryAR", []);
+        return results as DrugCategory[];
+    } catch (error) {
+        console.error("Error fetching drug categories:", error);
+        throw error;
+    }
+}
+
+// Add a new drug category
+export async function addDrugCategory(categoryData: Omit<DrugCategory, 'id'>): Promise<DrugCategory> {
+    const db = await getDB();
+    const newId = `cat-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
+    const query = `
+        INSERT INTO DrugCategories (id, categoryAR, categoryEN, description)
+        VALUES (?, ?, ?, ?)
+    `;
+    const params = [newId, categoryData.categoryAR, categoryData.categoryEN, categoryData.description];
+    try {
+        await db.execute(query, params);
+        const newCategory = { ...categoryData, id: newId };
+        console.log("Added Drug Category (DB):", newCategory);
+        return newCategory;
+    } catch (error) {
+        console.error("Error adding drug category:", error);
+        throw error;
+    }
+}
+
+// Get all Egyptian drugs
+export async function getEgyptianDrugs(filters?: {
+    categoryId?: string;
+    search?: string;
+    manufacturer?: string;
+}): Promise<EgyptianDrug[]> {
+    const db = await getDB();
+    try {
+        let query = `
+            SELECT d.*, c.categoryAR, c.categoryEN
+            FROM EgyptianDrugs d
+            LEFT JOIN DrugCategories c ON d.categoryID = c.id
+        `;
+        const params: any[] = [];
+        const conditions: string[] = [];
+
+        if (filters?.categoryId) {
+            conditions.push("d.categoryID = ?");
+            params.push(filters.categoryId);
+        }
+
+        if (filters?.search) {
+            conditions.push("(d.nameAR LIKE ? OR d.nameEN LIKE ? OR d.activeIngredient LIKE ? OR d.egyptianBarcode LIKE ?)");
+            const searchTerm = `%${filters.search}%`;
+            params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+        }
+
+        if (filters?.manufacturer) {
+            conditions.push("d.manufacturer = ?");
+            params.push(filters.manufacturer);
+        }
+
+        if (conditions.length > 0) {
+            query += " WHERE " + conditions.join(" AND ");
+        }
+
+        query += " ORDER BY d.nameAR";
+        const results = await db.select(query, params);
+        return results as EgyptianDrug[];
+    } catch (error) {
+        console.error("Error fetching Egyptian drugs:", error);
+        throw error;
+    }
+}
+
+// Get Egyptian drug by barcode
+export async function getEgyptianDrugByBarcode(barcode: string): Promise<EgyptianDrug | undefined> {
+    const db = await getDB();
+    try {
+        const results = await db.select(`
+            SELECT d.*, c.categoryAR, c.categoryEN
+            FROM EgyptianDrugs d
+            LEFT JOIN DrugCategories c ON d.categoryID = c.id
+            WHERE d.egyptianBarcode = ?
+        `, [barcode]);
+        if (results && results.length > 0) {
+            return results[0] as EgyptianDrug;
+        }
+        return undefined;
+    } catch (error) {
+        console.error(`Error fetching Egyptian drug by barcode ${barcode}:`, error);
+        throw error;
+    }
+}
+
+// Add Egyptian drug
+export async function addEgyptianDrug(drugData: Omit<EgyptianDrug, 'id' | 'categoryAR' | 'categoryEN' | 'createdAt' | 'updatedAt'>): Promise<EgyptianDrug> {
+    const db = await getDB();
+    const newId = `drug-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
+    const query = `
+        INSERT INTO EgyptianDrugs (
+            id, nameAR, nameEN, activeIngredient, manufacturer, egyptianBarcode,
+            categoryID, type, dosage, packaging, price, registrationNumber, approvalDate
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+    const params = [
+        newId,
+        drugData.nameAR,
+        drugData.nameEN,
+        drugData.activeIngredient,
+        drugData.manufacturer,
+        drugData.egyptianBarcode,
+        drugData.categoryID,
+        drugData.type,
+        drugData.dosage,
+        drugData.packaging,
+        drugData.price,
+        drugData.registrationNumber,
+        drugData.approvalDate ? formatDateForDB(drugData.approvalDate) : null,
+    ];
+    try {
+        await db.execute(query, params);
+        const newDrug = await getEgyptianDrugByBarcode(drugData.egyptianBarcode);
+        console.log("Added Egyptian Drug (DB):", newDrug);
+        return newDrug!;
+    } catch (error) {
+        console.error("Error adding Egyptian drug:", error);
+        throw error;
+    }
+}
+
+// ====================================================================
+// Invoice & Multi-language Operations
+// عمليات الفواتير ودعم اللغات المتعددة
+// ====================================================================
+
+// Get all supported invoice languages
+export async function getInvoiceLanguages(): Promise<InvoiceLanguage[]> {
+    const db = await getDB();
+    try {
+        const results = await db.select("SELECT * FROM InvoiceLanguages ORDER BY isRTL DESC, name", []);
+        return results as InvoiceLanguage[];
+    } catch (error) {
+        console.error("Error fetching invoice languages:", error);
+        throw error;
+    }
+}
+
+// Get invoice translations for a specific language
+export async function getInvoiceTranslations(languageId: string): Promise<Record<string, string>> {
+    const db = await getDB();
+    try {
+        const results = await db.select("SELECT keyName, translation FROM InvoiceTranslations WHERE languageId = ?", [languageId]);
+        const translations: Record<string, string> = {};
+        for (const item of results as any[]) {
+            translations[item.keyName] = item.translation;
+        }
+        return translations;
+    } catch (error) {
+        console.error(`Error fetching invoice translations for language ${languageId}:`, error);
+        throw error;
+    }
+}
+
+// Get customer preference
+export async function getCustomerPreference(customerId: string): Promise<CustomerPreference | undefined> {
+    const db = await getDB();
+    try {
+        const results = await db.select("SELECT * FROM CustomerPreferences WHERE customerId = ?", [customerId]);
+        if (results && results.length > 0) {
+            return results[0] as CustomerPreference;
+        }
+        return undefined;
+    } catch (error) {
+        console.error(`Error fetching customer preference for ${customerId}:`, error);
+        throw error;
+    }
+}
+
+// Set customer preference (language, currency)
+export async function setCustomerPreference(customerId: string, preference: Omit<CustomerPreference, 'id' | 'customerId' | 'createdAt' | 'updatedAt'>): Promise<CustomerPreference> {
+    const db = await getDB();
+    const newId = `pref-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
+    const query = `
+        INSERT INTO CustomerPreferences (id, customerId, preferredLanguageId, preferredCurrency)
+        VALUES (?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+        preferredLanguageId = VALUES(preferredLanguageId),
+        preferredCurrency = VALUES(preferredCurrency),
+        updatedAt = CURRENT_TIMESTAMP
+    `;
+    const params = [newId, customerId, preference.preferredLanguageId, preference.preferredCurrency || 'EGP'];
+    try {
+        await db.execute(query, params);
+        const updatedPref = await getCustomerPreference(customerId);
+        console.log("Set Customer Preference (DB):", updatedPref);
+        return updatedPref!;
+    } catch (error) {
+        console.error("Error setting customer preference:", error);
+        throw error;
+    }
+}
+
+// Get invoice templates
+export async function getInvoiceTemplates(languageId?: string): Promise<InvoiceTemplate[]> {
+    const db = await getDB();
+    try {
+        let query = "SELECT * FROM InvoiceTemplates";
+        const params: any[] = [];
+        if (languageId) {
+            query += " WHERE languageId = ?";
+            params.push(languageId);
+        }
+        query += " ORDER BY isDefault DESC, name";
+        const results = await db.select(query, params);
+        return results as InvoiceTemplate[];
+    } catch (error) {
+        console.error("Error fetching invoice templates:", error);
+        throw error;
+    }
+}
+
+// Generate invoice number
+export async function generateInvoiceNumber(): Promise<string> {
+    const db = await getDB();
+    try {
+        const result = await db.select("SELECT COUNT(*) as count FROM SalesTransactions", []);
+        const count = result[0]?.count || 0;
+        const year = new Date().getFullYear();
+        const month = String(new Date().getMonth() + 1).padStart(2, '0');
+        const sequence = String(count + 1).padStart(4, '0');
+        return `INV-${year}${month}-${sequence}`;
+    } catch (error) {
+        console.error("Error generating invoice number:", error);
+        throw error;
+    }
+}
+
+// Get products for invoice items
+export async function getProductsForInvoice(sale: SaleTransaction): Promise<Product[]> {
+    const db = await getDB();
+    try {
+        // Get all product IDs from sale items
+        const productIds = [...new Set(sale.items.map(item => item.productId))];
+        
+        // Fetch all products
+        const results = await db.select(`SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products`, []);
+        const allProducts = (results as any[]).map(mapProductData);
+        
+        // Filter products that are in the sale
+        return allProducts.filter(product => productIds.includes(product.id));
+    } catch (error) {
+        console.error("Error fetching products for invoice:", error);
+        throw error;
     }
 }
