@@ -16,9 +16,9 @@ import { arSA } from 'date-fns/locale'; // Import Arabic locale
 
 // Helper function to safely parse floats (can be moved to utils)
 const safeParseFloat = (value: string | number | null | undefined, defaultValue = 0): number => {
-    if (value === null || value === undefined) return defaultValue;
-    const parsed = parseFloat(value.toString());
-    return isNaN(parsed) ? defaultValue : parsed;
+  if (value === null || value === undefined) return defaultValue;
+  const parsed = parseFloat(value.toString());
+  return isNaN(parsed) ? defaultValue : parsed;
 };
 
 export default function ProfitLossReportPage() {
@@ -54,22 +54,22 @@ export default function ProfitLossReportPage() {
         calculatedTotalSales += safeParseFloat(sale.totalAmount); // Parse totalAmount
         // Calculate COGS for this sale
         for (const item of sale.items) {
-           const itemQuantityNum = safeParseFloat(item.quantity); // Parse quantity
-           // If costAtSale is stored, use it directly
+          const itemQuantityNum = safeParseFloat(item.quantity); // Parse quantity
+          // If costAtSale is stored, use it directly
           if (item.costAtSale !== undefined && item.costAtSale !== null) {
             calculatedTotalCOGS += safeParseFloat(item.costAtSale) * itemQuantityNum; // Parse costAtSale
           } else {
-             // Fallback: Fetch product cost if not stored on the sale item
+            // Fallback: Fetch product cost if not stored on the sale item
             const product = await getProductById(item.productId);
-             // Cost needs to be per *sold unit*
-             let costPerSoldUnit = 0;
-             if (product && product.lastPurchaseCost !== undefined) {
-                 const lastPurchaseCostNum = safeParseFloat(product.lastPurchaseCost); // Parse cost
-                 costPerSoldUnit = item.soldUnitType === 'sub' && product.subUnitsPerUnit
-                     ? lastPurchaseCostNum / product.subUnitsPerUnit
-                     : lastPurchaseCostNum;
-             }
-             // else: handle missing product or cost (e.g., log warning, assume 0 cost)
+            // Cost needs to be per *sold unit*
+            let costPerSoldUnit = 0;
+            if (product && product.lastPurchaseCost !== undefined) {
+              const lastPurchaseCostNum = safeParseFloat(product.lastPurchaseCost); // Parse cost
+              costPerSoldUnit = item.soldUnitType === 'sub' && product.subUnitsPerUnit
+                ? lastPurchaseCostNum / product.subUnitsPerUnit
+                : lastPurchaseCostNum;
+            }
+            // else: handle missing product or cost (e.g., log warning, assume 0 cost)
 
             calculatedTotalCOGS += costPerSoldUnit * itemQuantityNum;
           }
@@ -106,105 +106,105 @@ export default function ProfitLossReportPage() {
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div className="flex flex-wrap justify-between items-center gap-4">
-          <h2 className="text-2xl font-semibold flex items-center gap-2">
-            <ProfitIcon className={`w-6 h-6 ${profitColor}`} />
-            تقرير الأرباح والخسائر
-          </h2>
-          <div className="flex items-center gap-2">
-              {/* Filter Popover */}
-               <Popover>
-                   <PopoverTrigger asChild>
-                       <Button variant="outline">
-                          <Filter className="ml-2 h-4 w-4" />
-                           تحديد الفترة
-                       </Button>
-                   </PopoverTrigger>
-                   <PopoverContent className="w-80">
-                       <div className="grid gap-4">
-                           <div className="space-y-2">
-                               <h4 className="font-medium leading-none">الفترة الزمنية</h4>
-                               <p className="text-sm text-muted-foreground">
-                                   اختر فترة لعرض التقرير.
-                               </p>
-                           </div>
-                           <div className="grid gap-2">
-                               <div className="grid grid-cols-2 items-center gap-4">
-                                  <Label htmlFor="dateFrom">من تاريخ</Label>
-                                   <DatePicker date={dateFrom} setDate={setDateFrom} buttonClassName="h-8 text-xs w-full" />
-                               </div>
-                               <div className="grid grid-cols-2 items-center gap-4">
-                                  <Label htmlFor="dateTo">إلى تاريخ</Label>
-                                   <DatePicker date={dateTo} setDate={setDateTo} buttonClassName="h-8 text-xs w-full" />
-                               </div>
-                           </div>
-                           <div className='flex gap-2'>
-                              <Button variant="outline" size="sm" onClick={resetFilters} className='flex-1'>إعادة تعيين (الشهر الحالي)</Button>
-                              <Button size="sm" onClick={calculateProfitLoss} disabled={isLoading} className='flex-1'>
-                                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'تطبيق'}
-                              </Button>
-                           </div>
-                       </div>
-                   </PopoverContent>
-               </Popover>
-          </div>
+        <h2 className="text-2xl font-semibold flex items-center gap-2">
+          <ProfitIcon className={`w-6 h-6 ${profitColor}`} />
+          تقرير الأرباح والخسائر
+        </h2>
+        <div className="flex items-center gap-2">
+          {/* Filter Popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline">
+                <Filter className="ml-2 h-4 w-4" />
+                تحديد الفترة
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80">
+              <div className="grid gap-4">
+                <div className="space-y-2">
+                  <h4 className="font-medium leading-none">الفترة الزمنية</h4>
+                  <p className="text-sm text-muted-foreground">
+                    اختر فترة لعرض التقرير.
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <div className="grid grid-cols-2 items-center gap-4">
+                    <Label htmlFor="dateFrom">من تاريخ</Label>
+                    <DatePicker date={dateFrom} setDate={setDateFrom} buttonClassName="h-8 text-xs w-full" />
+                  </div>
+                  <div className="grid grid-cols-2 items-center gap-4">
+                    <Label htmlFor="dateTo">إلى تاريخ</Label>
+                    <DatePicker date={dateTo} setDate={setDateTo} buttonClassName="h-8 text-xs w-full" />
+                  </div>
+                </div>
+                <div className='flex gap-2'>
+                  <Button variant="outline" size="sm" onClick={resetFilters} className='flex-1'>إعادة تعيين (الشهر الحالي)</Button>
+                  <Button size="sm" onClick={calculateProfitLoss} disabled={isLoading} className='flex-1'>
+                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'تطبيق'}
+                  </Button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
       </div>
 
 
       <Card>
         <CardHeader>
           <CardTitle>ملخص الأرباح والخسائر</CardTitle>
-           <CardDescription>
-             الأداء المالي للفترة من {dateFrom ? format(dateFrom, 'dd/MM/yyyy', { locale: arSA }) : 'البداية'} إلى {dateTo ? format(dateTo, 'dd/MM/yyyy', { locale: arSA }) : 'النهاية'}.
-           </CardDescription>
+          <CardDescription>
+            الأداء المالي للفترة من {dateFrom ? format(dateFrom, 'dd/MM/yyyy', { locale: arSA }) : 'البداية'} إلى {dateTo ? format(dateTo, 'dd/MM/yyyy', { locale: arSA }) : 'النهاية'}.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
-             <div className="space-y-4">
-                <div className="flex justify-between items-center"><span className="text-muted-foreground">إجمالي المبيعات:</span> <Skeleton className="h-6 w-24" /></div>
-                <div className="flex justify-between items-center"><span className="text-muted-foreground">تكلفة البضاعة المباعة:</span> <Skeleton className="h-6 w-24" /></div>
-                <div className="flex justify-between items-center font-medium"><span className="text-muted-foreground">إجمالي الربح:</span> <Skeleton className="h-6 w-24" /></div>
-                 {/* <div className="flex justify-between items-center"><span className="text-muted-foreground">المصروفات:</span> <Skeleton className="h-6 w-24" /></div> */}
-                <div className="flex justify-between items-center text-lg font-bold"><span className="text-muted-foreground">صافي الربح/الخسارة:</span> <Skeleton className="h-8 w-32" /></div>
-             </div>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center"><span className="text-muted-foreground">إجمالي المبيعات:</span> <Skeleton className="h-6 w-24" /></div>
+              <div className="flex justify-between items-center"><span className="text-muted-foreground">تكلفة البضاعة المباعة:</span> <Skeleton className="h-6 w-24" /></div>
+              <div className="flex justify-between items-center font-medium"><span className="text-muted-foreground">إجمالي الربح:</span> <Skeleton className="h-6 w-24" /></div>
+              {/* <div className="flex justify-between items-center"><span className="text-muted-foreground">المصروفات:</span> <Skeleton className="h-6 w-24" /></div> */}
+              <div className="flex justify-between items-center text-lg font-bold"><span className="text-muted-foreground">صافي الربح/الخسارة:</span> <Skeleton className="h-8 w-32" /></div>
+            </div>
           ) : (
             <div className="space-y-2 text-base">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">إجمالي المبيعات:</span>
-                <span>{totalSales.toFixed(2)} ر.س</span>
+                <span>{totalSales.toFixed(2)} ج.م</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">تكلفة البضاعة المباعة (COGS):</span>
-                <span>{totalCostOfGoodsSold.toFixed(2)} ر.س</span>
+                <span>{totalCostOfGoodsSold.toFixed(2)} ج.م</span>
               </div>
-               <div className="flex justify-between font-medium border-t pt-2">
+              <div className="flex justify-between font-medium border-t pt-2">
                 <span className="text-muted-foreground">إجمالي الربح:</span>
-                <span>{grossProfit.toFixed(2)} ر.س</span>
+                <span>{grossProfit.toFixed(2)} ج.م</span>
               </div>
-               {/* <div className="flex justify-between">
+              {/* <div className="flex justify-between">
                 <span className="text-muted-foreground">المصروفات (مثال):</span>
-                <span>{(totalSales - netProfit - totalCostOfGoodsSold).toFixed(2)} ر.س</span>
+                <span>{(totalSales - netProfit - totalCostOfGoodsSold).toFixed(2)} ج.م</span>
               </div> */}
               <div className={`flex justify-between text-lg font-bold border-t pt-2 ${profitColor}`}>
                 <span className="text-foreground">صافي الربح/الخسارة (مبدئي):</span>
-                <span>{netProfit.toFixed(2)} ر.س</span>
+                <span>{netProfit.toFixed(2)} ج.م</span>
               </div>
             </div>
           )}
-           <p className="text-xs text-muted-foreground mt-4">
-             * ملاحظة: تكلفة البضاعة المباعة تعتمد على آخر سعر شراء مسجل للمنتج وقت البيع. صافي الربح لا يشمل المصروفات الأخرى (إيجار، رواتب، إلخ) التي يجب إضافتها يدوياً أو عبر نظام محاسبي منفصل.
-           </p>
+          <p className="text-xs text-muted-foreground mt-4">
+            * ملاحظة: تكلفة البضاعة المباعة تعتمد على آخر سعر شراء مسجل للمنتج وقت البيع. صافي الربح لا يشمل المصروفات الأخرى (إيجار، رواتب، إلخ) التي يجب إضافتها يدوياً أو عبر نظام محاسبي منفصل.
+          </p>
         </CardContent>
       </Card>
 
       {/* Add more detailed breakdown or charts later */}
       <Card>
-         <CardHeader>
-           <CardTitle>تفاصيل إضافية</CardTitle>
-           <CardDescription>(سيتم بناء هذه الواجهة لاحقاً)</CardDescription>
-         </CardHeader>
-         <CardContent className="text-center text-muted-foreground p-10">
-             يمكن إضافة رسوم بيانية وتحليلات تفصيلية للمبيعات والتكاليف والمصروفات هنا.
-         </CardContent>
+        <CardHeader>
+          <CardTitle>تفاصيل إضافية</CardTitle>
+          <CardDescription>(سيتم بناء هذه الواجهة لاحقاً)</CardDescription>
+        </CardHeader>
+        <CardContent className="text-center text-muted-foreground p-10">
+          يمكن إضافة رسوم بيانية وتحليلات تفصيلية للمبيعات والتكاليف والمصروفات هنا.
+        </CardContent>
       </Card>
     </div>
   );

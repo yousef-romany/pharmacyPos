@@ -30,79 +30,79 @@ export default function SettingsPage() {
             {/* Example Setting 2 */}
             <div className="flex items-center justify-between p-4 border rounded-md">
               <span className="font-medium">العملة الافتراضية</span>
-              <span>ريال سعودي (ر.س)</span> {/* Placeholder */}
+              <span>جنيه مصرى (ج.م)</span> {/* Placeholder */}
             </div>
-             {/* Add more general settings here */}
+            {/* Add more general settings here */}
           </div>
         </CardContent>
       </Card>
 
-       {/* Modules Settings Grid */}
-       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"> {/* Adjusted grid columns */}
-           {/* Treasury Settings */}
-           <Card>
-             <CardHeader>
-               <CardTitle className="flex items-center gap-2"><Banknote className="w-5 h-5"/> إعدادات الخزنة والحسابات</CardTitle>
-                <CardDescription>إدارة الحسابات المالية والعمليات.</CardDescription>
-             </CardHeader>
-             <CardContent>
-                 <p className="text-muted-foreground text-sm mb-4">
-                    تكوين حسابات الخزنة، وتتبع الإيداعات والسحوبات والمصروفات. تتم الإدارة من صفحة الخزنة.
-                 </p>
-                 <Button variant="outline" size="sm" asChild>
-                    <Link href="/treasury">الذهاب إلى إدارة الخزنة</Link>
-                 </Button>
-             </CardContent>
-           </Card>
+      {/* Modules Settings Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"> {/* Adjusted grid columns */}
+        {/* Treasury Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Banknote className="w-5 h-5" /> إعدادات الخزنة والحسابات</CardTitle>
+            <CardDescription>إدارة الحسابات المالية والعمليات.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground text-sm mb-4">
+              تكوين حسابات الخزنة، وتتبع الإيداعات والسحوبات والمصروفات. تتم الإدارة من صفحة الخزنة.
+            </p>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/treasury">الذهاب إلى إدارة الخزنة</Link>
+            </Button>
+          </CardContent>
+        </Card>
 
-           {/* Warehouse Settings (Physical Inventory) */}
-           <Card>
-             <CardHeader>
-               <CardTitle className="flex items-center gap-2"><WarehouseIcon className="w-5 h-5"/> إدارة المخازن</CardTitle>
-               <CardDescription>إضافة وتعديل أماكن تخزين المنتجات.</CardDescription>
-             </CardHeader>
-             <CardContent>
-                 <p className="text-muted-foreground text-sm mb-4">
-                   إدارة المخازن الفعلية التي يتم تخزين المنتجات بها وتحديد المخزن الافتراضي. تتم الإدارة من صفحة المخزون.
-                 </p>
-                  <Button variant="outline" size="sm" asChild>
-                     <Link href="/inventory">الذهاب إلى إدارة المخازن</Link>
-                  </Button>
-             </CardContent>
-           </Card>
+        {/* Warehouse Settings (Physical Inventory) */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><WarehouseIcon className="w-5 h-5" /> إدارة المخازن</CardTitle>
+            <CardDescription>إضافة وتعديل أماكن تخزين المنتجات.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground text-sm mb-4">
+              إدارة المخازن الفعلية التي يتم تخزين المنتجات بها وتحديد المخزن الافتراضي. تتم الإدارة من صفحة المخزون.
+            </p>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/inventory">الذهاب إلى إدارة المخازن</Link>
+            </Button>
+          </CardContent>
+        </Card>
 
-           {/* Inventory Settings (Alerts etc.) */}
-            <Card>
-             <CardHeader>
-               <CardTitle className="flex items-center gap-2"><Archive className="w-5 h-5"/> إعدادات المخزون</CardTitle>
-               <CardDescription>إدارة تنبيهات المخزون العامة.</CardDescription>
-             </CardHeader>
-             <CardContent>
-                 <p className="text-muted-foreground text-sm mb-4">
-                   إعدادات حدود التنبيه لنقص المخزون وتواريخ الصلاحية. (يتم عرضها في تقرير المخزون)
-                 </p>
-                 <Button variant="outline" size="sm" asChild>
-                    <Link href="/inventory">الذهاب إلى المخزون</Link>
-                 </Button>
-             </CardContent>
-           </Card>
+        {/* Inventory Settings (Alerts etc.) */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Archive className="w-5 h-5" /> إعدادات المخزون</CardTitle>
+            <CardDescription>إدارة تنبيهات المخزون العامة.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground text-sm mb-4">
+              إعدادات حدود التنبيه لنقص المخزون وتواريخ الصلاحية. (يتم عرضها في تقرير المخزون)
+            </p>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/inventory">الذهاب إلى المخزون</Link>
+            </Button>
+          </CardContent>
+        </Card>
 
-           {/* User Settings */}
-           <Card>
-             <CardHeader>
-               <CardTitle className="flex items-center gap-2"><Users className="w-5 h-5"/> إدارة المستخدمين</CardTitle>
-               <CardDescription>إدارة المستخدمين وأدوارهم وصلاحياتهم.</CardDescription>
-             </CardHeader>
-             <CardContent>
-                <p className="text-muted-foreground text-sm mb-4">
-                    إنشاء المستخدمين، تعيين الأدوار (مدير، بائع)، وتحديد الصلاحيات لكل دور داخل النظام.
-                </p>
-                 <Button variant="outline" size="sm" asChild>
-                    <Link href="/users">الذهاب إلى إدارة المستخدمين</Link>
-                 </Button>
-             </CardContent>
-           </Card>
-       </div>
+        {/* User Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Users className="w-5 h-5" /> إدارة المستخدمين</CardTitle>
+            <CardDescription>إدارة المستخدمين وأدوارهم وصلاحياتهم.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground text-sm mb-4">
+              إنشاء المستخدمين، تعيين الأدوار (مدير، بائع)، وتحديد الصلاحيات لكل دور داخل النظام.
+            </p>
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/users">الذهاب إلى إدارة المستخدمين</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

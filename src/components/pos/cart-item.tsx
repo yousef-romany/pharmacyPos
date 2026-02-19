@@ -16,35 +16,35 @@ interface CartItemProps {
 
 // Helper to get available quantity in terms of the selected unit
 const getAvailableQuantity = (product: CartItemType, selectedUnitType: 'main' | 'sub'): number => {
-    // Use parseFloatFromDB or similar robust parsing if product.quantity can be a string
-    const quantityNum = parseFloat(product.quantity.toString()); // Ensure it's a number
-    if (isNaN(quantityNum)) return 0;
+  // Use parseFloatFromDB or similar robust parsing if product.quantity can be a string
+  const quantityNum = parseFloat(product.quantity.toString()); // Ensure it's a number
+  if (isNaN(quantityNum)) return 0;
 
-    if (selectedUnitType === 'sub' && product.subUnitsPerUnit) {
-        // Convert main unit quantity to sub-unit quantity
-        // Use floor to prevent selling fractions of sub-units if main quantity is fractional
-        return Math.floor(quantityNum * product.subUnitsPerUnit);
-    }
-    // For main unit, return the quantity directly, flooring for safety
-    return Math.floor(quantityNum);
+  if (selectedUnitType === 'sub' && product.subUnitsPerUnit) {
+    // Convert main unit quantity to sub-unit quantity
+    // Use floor to prevent selling fractions of sub-units if main quantity is fractional
+    return Math.floor(quantityNum * product.subUnitsPerUnit);
+  }
+  // For main unit, return the quantity directly, flooring for safety
+  return Math.floor(quantityNum);
 };
 
 // Helper to calculate original price before discount
 const calculateOriginalPrice = (item: CartItemType): number => {
-     const priceNum = parseFloat(item.price.toString()); // Ensure it's a number
-     const pricePerSelectedUnitNum = parseFloat(item.pricePerSelectedUnit.toString()); // Ensure it's a number
-     const discountRateNum = item.discountRate ? parseFloat(item.discountRate.toString()) : 0; // Ensure it's a number
+  const priceNum = parseFloat(item.price.toString()); // Ensure it's a number
+  const pricePerSelectedUnitNum = parseFloat(item.pricePerSelectedUnit.toString()); // Ensure it's a number
+  const discountRateNum = item.discountRate ? parseFloat(item.discountRate.toString()) : 0; // Ensure it's a number
 
-     if (isNaN(priceNum) || isNaN(pricePerSelectedUnitNum) || isNaN(discountRateNum)) return 0;
+  if (isNaN(priceNum) || isNaN(pricePerSelectedUnitNum) || isNaN(discountRateNum)) return 0;
 
-     const basePrice = item.selectedUnitType === 'sub'
-        ? (priceNum / (item.subUnitsPerUnit || 1))
-        : priceNum;
-     // If discount was applied, calculate original from discounted price
-     if (discountRateNum > 0 && pricePerSelectedUnitNum !== basePrice) {
-         return pricePerSelectedUnitNum / (1 - discountRateNum / 100);
-     }
-     return pricePerSelectedUnitNum; // No discount, return the stored price
+  const basePrice = item.selectedUnitType === 'sub'
+    ? (priceNum / (item.subUnitsPerUnit || 1))
+    : priceNum;
+  // If discount was applied, calculate original from discounted price
+  if (discountRateNum > 0 && pricePerSelectedUnitNum !== basePrice) {
+    return pricePerSelectedUnitNum / (1 - discountRateNum / 100);
+  }
+  return pricePerSelectedUnitNum; // No discount, return the stored price
 };
 
 export function CartItem({ item }: CartItemProps) {
@@ -62,10 +62,10 @@ export function CartItem({ item }: CartItemProps) {
   const originalPrice = calculateOriginalPrice(item); // Calculate original price
   const hasDiscount = item.discountRate && parseFloat(item.discountRate.toString()) > 0 && originalPrice !== parseFloat(item.pricePerSelectedUnit.toString());
 
-    // Ensure pricePerSelectedUnit is a number for calculation
-    const pricePerSelectedUnitNum = parseFloat(item.pricePerSelectedUnit.toString());
-    const itemTotal = isNaN(pricePerSelectedUnitNum) ? 0 : pricePerSelectedUnitNum * quantity;
-    const originalItemTotal = isNaN(originalPrice) ? 0 : originalPrice * quantity;
+  // Ensure pricePerSelectedUnit is a number for calculation
+  const pricePerSelectedUnitNum = parseFloat(item.pricePerSelectedUnit.toString());
+  const itemTotal = isNaN(pricePerSelectedUnitNum) ? 0 : pricePerSelectedUnitNum * quantity;
+  const originalItemTotal = isNaN(originalPrice) ? 0 : originalPrice * quantity;
 
 
   const handleQuantityChange = (newQuantity: number) => {
@@ -74,14 +74,14 @@ export function CartItem({ item }: CartItemProps) {
 
     // Check against available stock BEFORE updating
     if (validatedQuantity > availableStockInSelectedUnit) {
-        toast({
-             title: "الكمية غير متوفرة",
-             description: `الكمية المتاحة لـ ${item.nameAr} (${unitLabel}) هي ${availableStockInSelectedUnit}.`,
-             variant: "destructive",
-           });
-         setQuantity(availableStockInSelectedUnit); // Reset local input to max available
-         updateItemQuantity(item.id, item.selectedUnitType, availableStockInSelectedUnit); // Update cart to max available
-         return; // Stop further processing
+      toast({
+        title: "الكمية غير متوفرة",
+        description: `الكمية المتاحة لـ ${item.nameAr} (${unitLabel}) هي ${availableStockInSelectedUnit}.`,
+        variant: "destructive",
+      });
+      setQuantity(availableStockInSelectedUnit); // Reset local input to max available
+      updateItemQuantity(item.id, item.selectedUnitType, availableStockInSelectedUnit); // Update cart to max available
+      return; // Stop further processing
     }
 
     setQuantity(validatedQuantity); // Update local state immediately
@@ -89,15 +89,15 @@ export function CartItem({ item }: CartItemProps) {
     // Update global cart state only if the validated quantity is different from current cart quantity
     // Or if it's becoming 0 (to trigger removal)
     if (validatedQuantity !== item.cartQuantity || validatedQuantity === 0) {
-         updateItemQuantity(item.id, item.selectedUnitType, validatedQuantity);
+      updateItemQuantity(item.id, item.selectedUnitType, validatedQuantity);
 
-         if (validatedQuantity === 0) {
-           toast({
-             title: "تمت الإزالة من السلة",
-             description: `${item.nameAr} (${unitLabel}) تمت إزالته.`,
-             variant: "destructive",
-           });
-        }
+      if (validatedQuantity === 0) {
+        toast({
+          title: "تمت الإزالة من السلة",
+          description: `${item.nameAr} (${unitLabel}) تمت إزالته.`,
+          variant: "destructive",
+        });
+      }
     }
   };
 
@@ -106,19 +106,19 @@ export function CartItem({ item }: CartItemProps) {
     if (!isNaN(value)) {
       handleQuantityChange(value);
     } else if (e.target.value === '') {
-        setQuantity(0); // Allow clearing the input, will handle on blur/change
+      setQuantity(0); // Allow clearing the input, will handle on blur/change
     }
   };
 
-   const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-     // Ensure the final quantity is validated against stock on blur
-     const value = parseInt(e.target.value, 10);
-     if (isNaN(value) || value <= 0) {
-       handleQuantityChange(0); // Set to 0 if invalid or empty on blur
-     } else {
-       handleQuantityChange(value); // Validate final number against stock
-     }
-   };
+  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+    // Ensure the final quantity is validated against stock on blur
+    const value = parseInt(e.target.value, 10);
+    if (isNaN(value) || value <= 0) {
+      handleQuantityChange(0); // Set to 0 if invalid or empty on blur
+    } else {
+      handleQuantityChange(value); // Validate final number against stock
+    }
+  };
 
 
   const handleRemove = () => {
@@ -136,11 +136,11 @@ export function CartItem({ item }: CartItemProps) {
       <div className="flex-1 min-w-0 mr-4">
         <p className="font-medium truncate">{item.nameAr} <span className="text-xs text-muted-foreground">({unitLabel})</span></p>
         <div className="flex items-baseline gap-1">
-             <p className="text-sm text-foreground font-semibold">{itemTotal.toFixed(2)} ر.س</p>
-             {hasDiscount && (
-                 <p className="text-xs text-muted-foreground line-through">{originalItemTotal.toFixed(2)} ر.س</p>
-             )}
-         </div>
+          <p className="text-sm text-foreground font-semibold">{itemTotal.toFixed(2)} ج.م</p>
+          {hasDiscount && (
+            <p className="text-xs text-muted-foreground line-through">{originalItemTotal.toFixed(2)} ج.م</p>
+          )}
+        </div>
       </div>
       <div className="flex items-center space-x-2 space-x-reverse">
         <Button
@@ -157,7 +157,7 @@ export function CartItem({ item }: CartItemProps) {
           type="number"
           min="0"
           // No max here, validation is handled in the change handler
-           value={quantity.toString()} // Controlled component
+          value={quantity.toString()} // Controlled component
           onChange={handleInputChange}
           onBlur={handleBlur}
           className="h-8 w-14 text-center px-1"
@@ -168,13 +168,13 @@ export function CartItem({ item }: CartItemProps) {
           size="icon"
           className="h-8 w-8"
           onClick={() => handleQuantityChange(quantity + 1)}
-           // Disable if trying to increase beyond stock
-           disabled={quantity >= availableStockInSelectedUnit}
+          // Disable if trying to increase beyond stock
+          disabled={quantity >= availableStockInSelectedUnit}
           aria-label="Increase quantity"
         >
           <Plus className="h-4 w-4" />
         </Button>
-         <Button
+        <Button
           variant="ghost"
           size="icon"
           className="h-8 w-8 text-destructive hover:bg-destructive/10"

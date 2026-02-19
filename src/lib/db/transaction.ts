@@ -8,6 +8,7 @@ import { executeWithTiming } from './observability';
 export interface Transaction {
   db: any;
   execute: (sql: string, params?: any[]) => Promise<any>;
+  select: <T>(sql: string, params?: any[]) => Promise<T>;
 }
 
 /**
@@ -46,23 +47,13 @@ export class TransactionError extends Error {
  * @param options - Transaction configuration options
  * @returns Result of the operation
  * @throws TransactionError if transaction fails
- * 
- * @example
- * ```typescript
- * const sale = await withTransaction(async (tx) => {
- *   const saleId = await tx.execute('INSERT INTO SalesTransactions ...');
- *   await tx.execute('INSERT INTO SaleItems ...', [saleId]);
- *   await tx.execute('UPDATE Products SET quantity = quantity - ? ...');
- *   return saleId;
- * });
- * ```
  */
 export async function withTransaction<T>(
   operation: (tx: Transaction) => Promise<T>,
   options: TransactionOptions = {}
 ): Promise<T> {
   const { isolationLevel = 'READ COMMITTED', timeout = 30000 } = options;
-  
+
   const db = await getDatabase();
   let transaction: Transaction | null = null;
   const startTime = Date.now();
@@ -70,14 +61,15 @@ export async function withTransaction<T>(
 
   try {
     // BEGIN TRANSACTION with isolation level
-    // Set isolation level first, then start transaction
+    // Set isolation level BEFORE starting transaction
     const setIsolationSql = `SET TRANSACTION ISOLATION LEVEL ${isolationLevel}`;
     await executeWithTiming(
       () => db.execute(setIsolationSql),
       setIsolationSql,
       'SET_ISOLATION'
     );
-    
+
+    // Start transaction AFTER setting isolation level
     const beginSql = 'START TRANSACTION';
     await executeWithTiming(
       () => db.execute(beginSql),
@@ -94,7 +86,15 @@ export async function withTransaction<T>(
         return executeWithTiming(
           () => db.execute(sql, params),
           sql,
-          'TRANSACTION'
+          'TRANSACTION_EXECUTE'
+        );
+      },
+      select: async <T>(sql: string, params: any[] = []) => {
+        operationCount++;
+        return executeWithTiming(
+          () => db.select(sql, params),
+          sql,
+          'TRANSACTION_SELECT'
         );
       }
     };
@@ -167,7 +167,7 @@ export async function withTransactionRetry<T>(
       return await withTransaction(operation);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      
+
       // Don't retry on transaction errors (non-transient)
       if (error instanceof TransactionError) {
         throw error;

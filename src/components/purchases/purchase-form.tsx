@@ -29,11 +29,11 @@ const purchaseItemSchema = z.object({
 
 // Payment Method Options for Purchases
 const purchasePaymentMethods: { value: PaymentMethod, label: string, icon: React.ElementType }[] = [
-    { value: 'cash', label: 'نقداً', icon: Coins },
-    { value: 'card', label: 'بطاقة', icon: CreditCard },
-    { value: 'instapay', label: 'إنستا باي', icon: Smartphone },
-    { value: 'vodafone_cash', label: 'فودافون كاش', icon: Wallet },
-    { value: 'debt', label: 'آجل/مديونية', icon: Landmark },
+  { value: 'cash', label: 'نقداً', icon: Coins },
+  { value: 'card', label: 'بطاقة', icon: CreditCard },
+  { value: 'instapay', label: 'إنستا باي', icon: Smartphone },
+  { value: 'vodafone_cash', label: 'فودافون كاش', icon: Wallet },
+  { value: 'debt', label: 'آجل/مديونية', icon: Landmark },
 ];
 
 const purchaseFormSchema = z.object({
@@ -53,9 +53,10 @@ interface PurchaseFormProps {
   warehouses: Warehouse[]; // Add warehouses prop
   onSubmit: (data: Omit<PurchaseTransaction, 'id' | 'totalAmount' | 'paymentStatus'>) => Promise<void>; // Adjusted onSubmit type
   onClose: () => void;
+  defaultValues?: PurchaseTransaction; // Add optional defaultValues for editing
 }
 
-export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: PurchaseFormProps) {
+export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose, defaultValues }: PurchaseFormProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
   const [productSearchTerm, setProductSearchTerm] = React.useState('');
@@ -63,35 +64,59 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
   const [isSearching, setIsSearching] = React.useState(false);
   const [defaultWarehouseId, setDefaultWarehouseId] = React.useState<string | undefined>(undefined);
   const [treasuries, setTreasuries] = React.useState<Treasury[]>([]); // State for treasuries
-  const [payments, setPayments] = React.useState<Array<{ treasuryId: string; amount: number }>>([]);  // Split payments
+  const [payments, setPayments] = React.useState<Array<{ treasuryId: string; amount: number }>>(
+    defaultValues?.payments?.map(p => ({ treasuryId: p.treasuryId, amount: parseFloat(p.amount) || 0 })) || []
+  );  // Split payments
 
-   // Fetch default warehouse ID and treasuries on mount
-   React.useEffect(() => {
-     const fetchData = async () => {
-         try {
-             const [id, fetchedTreasuries] = await Promise.all([
-                 getDefaultWarehouseId(),
-                 getTreasuries()
-             ]);
-             setDefaultWarehouseId(id);
-             setTreasuries(fetchedTreasuries);
-         } catch (error) {
-              console.error("Failed to fetch data:", error);
-              toast({ title: "خطأ", description: "فشل تحميل البيانات.", variant: "destructive" });
-         }
-     };
-     fetchData();
-   }, [toast]);
+  // Helper to safely parse float from DB string, similar to what's in lib/data.ts
+  const safeParseFloat = (value: string | number | null | undefined, defaultValue = 0): number => {
+    if (value === null || value === undefined) return defaultValue;
+    const parsed = parseFloat(value.toString());
+    return isNaN(parsed) ? defaultValue : parsed;
+  };
+
+  // Function to get product name for an item, might need to fetch if not present
+  const getProductName = React.useCallback(async (productId: string): Promise<string> => {
+    // This is a simplified approach. In a real app, you might have a cached list of products
+    // or a dedicated API endpoint to fetch a single product's name efficiently.
+    const product = await getProductById(productId);
+    return product?.nameAr || productId;
+  }, []);
+
+  // Fetch default warehouse ID and treasuries on mount
+  React.useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [id, fetchedTreasuries] = await Promise.all([
+          getDefaultWarehouseId(),
+          getTreasuries()
+        ]);
+        setDefaultWarehouseId(id);
+        setTreasuries(fetchedTreasuries);
+      } catch (error) {
+        console.error("Failed to fetch data:", error);
+        toast({ title: "خطأ", description: "فشل تحميل البيانات.", variant: "destructive" });
+      }
+    };
+    fetchData();
+  }, [toast]);
 
 
   const form = useForm<PurchaseFormValues>({
     resolver: zodResolver(purchaseFormSchema),
     defaultValues: {
-      supplierId: '',
-      date: new Date(),
-      invoiceNumber: '',
-      destinationWarehouseId: '', // Initialize overall warehouse
-      items: [],
+      supplierId: defaultValues?.supplierId || '',
+      date: defaultValues?.date ? new Date(defaultValues.date) : new Date(), // Ensure Date object
+      invoiceNumber: defaultValues?.invoiceNumber || '',
+      destinationWarehouseId: defaultValues?.destinationWarehouseId || '', // Initialize overall warehouse
+      items: defaultValues?.items?.map(item => ({
+        productId: item.productId,
+        productName: item.productName, // Assuming productName is available or fetched
+        quantity: safeParseFloat(item.quantity),
+        cost: safeParseFloat(item.cost),
+        expiryDate: item.expiryDate ? new Date(item.expiryDate) : undefined,
+        warehouseId: item.destinationWarehouseId, // Map to item's specific warehouse
+      })) || [],
     },
   });
 
@@ -100,12 +125,29 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
     name: 'items',
   });
 
-   // Update default destination warehouse for the form when fetched
-   React.useEffect(() => {
-      if (defaultWarehouseId && !form.getValues('destinationWarehouseId')) {
-          form.setValue('destinationWarehouseId', defaultWarehouseId);
-      }
-   }, [defaultWarehouseId, form]);
+  // Effect to populate product names for default items if not already present
+  React.useEffect(() => {
+    if (defaultValues?.items && fields.length > 0) {
+      defaultValues.items.forEach(async (item, index) => {
+        if (!form.getValues(`items.${index}.productName`)) {
+          const name = await getProductName(item.productId);
+          form.setValue(`items.${index}.productName`, name);
+        }
+      });
+    }
+  }, [defaultValues, fields, form, getProductName]);
+
+  // Update default destination warehouse for the form when fetched
+  React.useEffect(() => {
+    if (defaultWarehouseId && !form.getValues('destinationWarehouseId')) {
+      form.setValue('destinationWarehouseId', defaultWarehouseId);
+    }
+    // If we are editing and a specific destinationWarehouseId is set in defaultValues, use that.
+    if (defaultValues?.destinationWarehouseId) {
+      form.setValue('destinationWarehouseId', defaultValues.destinationWarehouseId);
+    }
+  }, [defaultWarehouseId, form, defaultValues]);
+
 
 
   // --- Product Search Logic ---
@@ -146,8 +188,8 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
     // Check if product already exists in the form items (consider warehouse later if needed)
     const exists = fields.some(item => item.productId === product.id);
     if (exists) {
-         toast({ title: "موجود بالفعل", description: `منتج "${product.nameAr}" موجود بالفعل في الفاتورة.`, variant: "default"});
-         return;
+      toast({ title: "موجود بالفعل", description: `منتج "${product.nameAr}" موجود بالفعل في الفاتورة.`, variant: "default" });
+      return;
     }
 
     const warehouseId = form.getValues('destinationWarehouseId') || defaultWarehouseId;
@@ -174,26 +216,26 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
 
   // --- Payment Management Functions ---
   const handleAddPayment = () => {
-      const defaultTreasury = treasuries.find(t => t.isDefault) || treasuries[0];
-      if (defaultTreasury) {
-          setPayments([...payments, { treasuryId: defaultTreasury.id, amount: 0 }]);
-      }
+    const defaultTreasury = treasuries.find(t => t.isDefault) || treasuries[0];
+    if (defaultTreasury) {
+      setPayments([...payments, { treasuryId: defaultTreasury.id, amount: 0 }]);
+    }
   };
 
   const handleRemovePayment = (index: number) => {
-      setPayments(payments.filter((_, i) => i !== index));
+    setPayments(payments.filter((_, i) => i !== index));
   };
 
   const handleUpdatePaymentTreasury = (index: number, treasuryId: string) => {
-      const newPayments = [...payments];
-      newPayments[index] = { ...newPayments[index], treasuryId };
-      setPayments(newPayments);
+    const newPayments = [...payments];
+    newPayments[index] = { ...newPayments[index], treasuryId };
+    setPayments(newPayments);
   };
 
   const handleUpdatePaymentAmount = (index: number, amount: number) => {
-      const newPayments = [...payments];
-      newPayments[index] = { ...newPayments[index], amount };
-      setPayments(newPayments);
+    const newPayments = [...payments];
+    newPayments[index] = { ...newPayments[index], amount };
+    setPayments(newPayments);
   };
 
   // Calculate total purchase amount
@@ -207,35 +249,35 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
   const processSubmit = async (data: PurchaseFormValues) => {
     // Validation for payments
     if (payments.length === 0) {
-        toast({ title: "مطلوب دفعة", description: "يجب إضافة دفعة واحدة على الأقل.", variant: "destructive"});
-        return;
+      toast({ title: "مطلوب دفعة", description: "يجب إضافة دفعة واحدة على الأقل.", variant: "destructive" });
+      return;
     }
 
     // Check if any payment has invalid treasury
     const hasInvalidTreasury = payments.some(p => !p.treasuryId);
     if (hasInvalidTreasury) {
-        toast({ title: "خطأ في الدفعات", description: "يجب اختيار خزينة لكل دفعة.", variant: "destructive"});
-        return;
+      toast({ title: "خطأ في الدفعات", description: "يجب اختيار خزينة لكل دفعة.", variant: "destructive" });
+      return;
     }
 
     // Check if any payment has negative amount
     const hasNegativeAmount = payments.some(p => p.amount < 0);
     if (hasNegativeAmount) {
-        toast({ title: "مبلغ غير صحيح", description: "المبلغ المدفوع لا يمكن أن يكون سالباً.", variant: "destructive"});
-        return;
+      toast({ title: "مبلغ غير صحيح", description: "المبلغ المدفوع لا يمكن أن يكون سالباً.", variant: "destructive" });
+      return;
     }
 
     // Note: For purchases, we allow partial payment (totalPaid < totalAmount)
 
     setIsLoading(true);
     try {
-       // Prepare split payments
-       const purchasePayments: PurchasePayment[] = payments.map(p => ({
-           treasuryId: p.treasuryId,
-           amount: String(p.amount)
-       }));
+      // Prepare split payments
+      const purchasePayments: PurchasePayment[] = payments.map(p => ({
+        treasuryId: p.treasuryId,
+        amount: String(p.amount)
+      }));
 
-       // Omit totalAmount and paymentStatus, they will be calculated in the data layer
+      // Omit totalAmount and paymentStatus, they will be calculated in the data layer
       const purchaseData: Omit<PurchaseTransaction, 'id' | 'totalAmount' | 'paymentStatus'> = {
         supplierId: data.supplierId,
         date: data.date,
@@ -243,11 +285,11 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
         payments: purchasePayments, // Include split payments
         destinationWarehouseId: data.destinationWarehouseId, // Include overall destination
         items: data.items.map(({ productId, quantity, cost, expiryDate, warehouseId }) => ({ // Include warehouseId per item
-            productId,
-            quantity: String(quantity), // Convert number to string as required by PurchaseTransactionItem type
-            cost: String(cost), // Convert number to string as required by PurchaseTransactionItem type
-            expiryDate,
-            destinationWarehouseId: warehouseId // Map form field to item property
+          productId,
+          quantity: String(quantity), // Convert number to string as required by PurchaseTransactionItem type
+          cost: String(cost), // Convert number to string as required by PurchaseTransactionItem type
+          expiryDate,
+          destinationWarehouseId: warehouseId // Map form field to item property
         })),
       };
       await onSubmit(purchaseData);
@@ -285,62 +327,62 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
               </Select>
             )}
           />
-           {form.formState.errors.supplierId && <p className="text-xs text-destructive mt-1">{form.formState.errors.supplierId.message}</p>}
+          {form.formState.errors.supplierId && <p className="text-xs text-destructive mt-1">{form.formState.errors.supplierId.message}</p>}
         </div>
 
         {/* Date Picker */}
         <div>
           <Label htmlFor="date">تاريخ الفاتورة <span className="text-destructive">*</span></Label>
-           <Controller
-              name="date"
-              control={form.control}
-              render={({ field }) => (
-                 <DatePicker
-                    date={field.value}
-                    setDate={(date) => field.onChange(date)} // Pass the onChange handler
-                    buttonClassName="w-full justify-start text-left font-normal"
-                 />
-              )}
-           />
+          <Controller
+            name="date"
+            control={form.control}
+            render={({ field }) => (
+              <DatePicker
+                date={field.value}
+                setDate={(date) => field.onChange(date)} // Pass the onChange handler
+                buttonClassName="w-full justify-start text-left font-normal"
+              />
+            )}
+          />
           {form.formState.errors.date && <p className="text-xs text-destructive mt-1">{form.formState.errors.date.message}</p>}
         </div>
 
-         {/* Supplier Invoice Number */}
-         <div>
-           <Label htmlFor="invoiceNumber">رقم فاتورة المورد</Label>
-           <Input
-              id="invoiceNumber"
-              {...form.register('invoiceNumber')}
-              placeholder="اختياري"
-           />
-           {form.formState.errors.invoiceNumber && <p className="text-xs text-destructive mt-1">{form.formState.errors.invoiceNumber.message}</p>}
-         </div>
+        {/* Supplier Invoice Number */}
+        <div>
+          <Label htmlFor="invoiceNumber">رقم فاتورة المورد</Label>
+          <Input
+            id="invoiceNumber"
+            {...form.register('invoiceNumber')}
+            placeholder="اختياري"
+          />
+          {form.formState.errors.invoiceNumber && <p className="text-xs text-destructive mt-1">{form.formState.errors.invoiceNumber.message}</p>}
+        </div>
 
 
-         {/* Overall Destination Warehouse */}
-          <div>
-              <Label htmlFor="destinationWarehouseId">مخزن الوجهة (لجميع الأصناف)</Label>
-              <Controller
-                 name="destinationWarehouseId"
-                 control={form.control}
-                 render={({ field }) => (
-                     <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value || ''}>
-                         <SelectTrigger id="destinationWarehouseId">
-                             <SelectValue placeholder="اختر المخزن..." />
-                         </SelectTrigger>
-                         <SelectContent>
-                             {warehouses.map((wh) => (
-                                 <SelectItem key={wh.id} value={wh.id}>
-                                      {wh.name} {wh.isDefault ? '(افتراضي)' : ''}
-                                 </SelectItem>
-                             ))}
-                         </SelectContent>
-                     </Select>
-                 )}
-              />
-               <p className="text-xs text-muted-foreground mt-1">يمكن تغيير المخزن لكل صنف في الجدول أدناه.</p>
-               {form.formState.errors.destinationWarehouseId && <p className="text-xs text-destructive mt-1">{form.formState.errors.destinationWarehouseId.message}</p>}
-          </div>
+        {/* Overall Destination Warehouse */}
+        <div>
+          <Label htmlFor="destinationWarehouseId">مخزن الوجهة (لجميع الأصناف)</Label>
+          <Controller
+            name="destinationWarehouseId"
+            control={form.control}
+            render={({ field }) => (
+              <Select onValueChange={field.onChange} defaultValue={field.value} value={field.value || ''}>
+                <SelectTrigger id="destinationWarehouseId">
+                  <SelectValue placeholder="اختر المخزن..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {warehouses.map((wh) => (
+                    <SelectItem key={wh.id} value={wh.id}>
+                      {wh.name} {wh.isDefault ? '(افتراضي)' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+          <p className="text-xs text-muted-foreground mt-1">يمكن تغيير المخزن لكل صنف في الجدول أدناه.</p>
+          {form.formState.errors.destinationWarehouseId && <p className="text-xs text-destructive mt-1">{form.formState.errors.destinationWarehouseId.message}</p>}
+        </div>
 
       </div>
 
@@ -359,7 +401,7 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
             className="flex-grow"
           />
         </div>
-         {/* Search Results Dropdown */}
+        {/* Search Results Dropdown */}
         {(isSearching || searchResults.length > 0) && (
           <div className="absolute z-10 w-full mt-1 bg-background border rounded-md shadow-lg max-h-60 overflow-y-auto">
             {isSearching ? (
@@ -372,12 +414,12 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
                   onClick={() => handleAddProduct(product)}
                 >
                   <span>{product.nameAr} ({product.nameEn})</span>
-                   <span className="text-sm text-muted-foreground">الكود: {product.id.substring(0,6)}</span>
+                  <span className="text-sm text-muted-foreground">الكود: {product.id.substring(0, 6)}</span>
                 </div>
               ))
             )}
-             {searchResults.length === 0 && !isSearching && productSearchTerm && (
-                 <div className="p-4 text-center text-muted-foreground">لم يتم العثور على منتجات.</div>
+            {searchResults.length === 0 && !isSearching && productSearchTerm && (
+              <div className="p-4 text-center text-muted-foreground">لم يتم العثور على منتجات.</div>
             )}
           </div>
         )}
@@ -417,8 +459,8 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
                           step="any" // Allow fractional quantities if needed
                           min="0.01"
                           className="h-8 w-20" // Adjusted width
-                           onChange={e => inputField.onChange(parseFloat(e.target.value) || 0)}
-                           value={inputField.value || ''}
+                          onChange={e => inputField.onChange(parseFloat(e.target.value) || 0)}
+                          value={inputField.value || ''}
                         />
                       )}
                     />
@@ -435,51 +477,51 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
                           step="0.01"
                           min="0"
                           className="h-8 w-20" // Adjusted width
-                           onChange={e => inputField.onChange(parseFloat(e.target.value) || 0)}
-                           value={inputField.value || ''}
+                          onChange={e => inputField.onChange(parseFloat(e.target.value) || 0)}
+                          value={inputField.value || ''}
                         />
                       )}
                     />
-                     {form.formState.errors.items?.[index]?.cost && <p className="text-xs text-destructive mt-1">{form.formState.errors.items?.[index]?.cost?.message}</p>}
+                    {form.formState.errors.items?.[index]?.cost && <p className="text-xs text-destructive mt-1">{form.formState.errors.items?.[index]?.cost?.message}</p>}
                   </TableCell>
                   <TableCell> {/* Expiry Date Picker Cell */}
                     <Controller
                       name={`items.${index}.expiryDate`}
                       control={form.control}
                       render={({ field: dateField }) => (
-                          <DatePicker
-                             date={dateField.value}
-                             setDate={(date) => dateField.onChange(date)}
-                             buttonClassName="w-32 justify-start text-left font-normal h-8 text-xs px-2 py-1" // Small date picker button
-                             buttonContent={dateField.value ? undefined : <span className='flex items-center'><CalendarIcon className="mr-1 h-3 w-3"/> اختياري </span>} // Placeholder text
-                           />
-                       )}
+                        <DatePicker
+                          date={dateField.value}
+                          setDate={(date) => dateField.onChange(date)}
+                          buttonClassName="w-32 justify-start text-left font-normal h-8 text-xs px-2 py-1" // Small date picker button
+                          buttonContent={dateField.value ? undefined : <span className='flex items-center'><CalendarIcon className="mr-1 h-3 w-3" /> اختياري </span>} // Placeholder text
+                        />
+                      )}
                     />
-                     {form.formState.errors.items?.[index]?.expiryDate && <p className="text-xs text-destructive mt-1">{form.formState.errors.items?.[index]?.expiryDate?.message}</p>}
+                    {form.formState.errors.items?.[index]?.expiryDate && <p className="text-xs text-destructive mt-1">{form.formState.errors.items?.[index]?.expiryDate?.message}</p>}
                   </TableCell>
-                   <TableCell> {/* Warehouse Select Cell */}
-                     <Controller
-                       name={`items.${index}.warehouseId`}
-                       control={form.control}
-                       render={({ field: selectField }) => (
-                          <Select onValueChange={selectField.onChange} value={selectField.value || ''}>
-                              <SelectTrigger className="h-8 text-xs w-32">
-                                  <SelectValue placeholder="اختر مخزن..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                  {warehouses.map((wh) => (
-                                      <SelectItem key={wh.id} value={wh.id}>
-                                          {wh.name}
-                                      </SelectItem>
-                                  ))}
-                              </SelectContent>
-                          </Select>
-                       )}
-                     />
-                     {form.formState.errors.items?.[index]?.warehouseId && <p className="text-xs text-destructive mt-1">{form.formState.errors.items?.[index]?.warehouseId?.message}</p>}
-                   </TableCell>
+                  <TableCell> {/* Warehouse Select Cell */}
+                    <Controller
+                      name={`items.${index}.warehouseId`}
+                      control={form.control}
+                      render={({ field: selectField }) => (
+                        <Select onValueChange={selectField.onChange} value={selectField.value || ''}>
+                          <SelectTrigger className="h-8 text-xs w-32">
+                            <SelectValue placeholder="اختر مخزن..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {warehouses.map((wh) => (
+                              <SelectItem key={wh.id} value={wh.id}>
+                                {wh.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {form.formState.errors.items?.[index]?.warehouseId && <p className="text-xs text-destructive mt-1">{form.formState.errors.items?.[index]?.warehouseId?.message}</p>}
+                  </TableCell>
                   <TableCell>
-                     {((form.watch(`items.${index}.quantity`) || 0) * (form.watch(`items.${index}.cost`) || 0)).toFixed(2)} ر.س
+                    {((form.watch(`items.${index}.quantity`) || 0) * (form.watch(`items.${index}.cost`) || 0)).toFixed(2)} ج.م
                   </TableCell>
                   <TableCell>
                     <Button
@@ -494,24 +536,24 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
                   </TableCell>
                 </TableRow>
               ))}
-               {fields.length === 0 && (
-                    <TableRow>
-                        <TableCell colSpan={7} className="h-24 text-center text-muted-foreground"> {/* Adjusted colspan */}
-                            لم يتم إضافة أصناف بعد. ابحث عن منتج وأضفه.
-                        </TableCell>
-                    </TableRow>
-                )}
+              {fields.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="h-24 text-center text-muted-foreground"> {/* Adjusted colspan */}
+                    لم يتم إضافة أصناف بعد. ابحث عن منتج وأضفه.
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </div>
-         {form.formState.errors.items?.root && <p className="text-xs text-destructive mt-1">{form.formState.errors.items.root.message}</p>}
+        {form.formState.errors.items?.root && <p className="text-xs text-destructive mt-1">{form.formState.errors.items.root.message}</p>}
       </div>
 
       {/* Split Payments Section */}
       <div className="space-y-4 border-t pt-4">
         <div className="flex justify-between items-center">
           <Label className="text-lg font-semibold">الدفعات</Label>
-          <Button type="button" variant="outline" size="sm" onClick={handleAddPayment} disabled={treasuries.length === 0 ||  isLoading}>
+          <Button type="button" variant="outline" size="sm" onClick={handleAddPayment} disabled={treasuries.length === 0 || isLoading}>
             <Plus className="h-4 w-4 ml-1" /> إضافة دفعة
           </Button>
         </div>
@@ -564,7 +606,7 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-xs">المبلغ (ر.س)</Label>
+                      <Label className="text-xs">المبلغ (ج.م)</Label>
                       <Input
                         type="number"
                         step="0.01"
@@ -586,23 +628,23 @@ export function PurchaseForm({ suppliers, warehouses, onSubmit, onClose }: Purch
         <div className="space-y-1 text-sm bg-muted/50 p-3 rounded-md">
           <div className="flex justify-between font-semibold">
             <span>إجمالي الفاتورة:</span>
-            <span>{totalAmount.toFixed(2)} ر.س</span>
+            <span>{totalAmount.toFixed(2)} ج.م</span>
           </div>
           <div className="flex justify-between text-blue-600 font-medium">
             <span>إجمالي المدفوع:</span>
-            <span>{totalPaid.toFixed(2)} ر.س</span>
+            <span>{totalPaid.toFixed(2)} ج.م</span>
           </div>
-          <Separator className="my-2"/>
+          <Separator className="my-2" />
           {remainingToPay > 0 && (
             <div className="flex justify-between text-destructive font-medium">
               <span>المبلغ المتبقي (على الحساب):</span>
-              <span>{remainingToPay.toFixed(2)} ر.س</span>
+              <span>{remainingToPay.toFixed(2)} ج.م</span>
             </div>
           )}
           {remainingToPay < 0 && (
             <div className="flex justify-between text-yellow-600 font-medium">
               <span>مدفوع زيادة:</span>
-              <span>{Math.abs(remainingToPay).toFixed(2)} ر.س</span>
+              <span>{Math.abs(remainingToPay).toFixed(2)} ج.م</span>
             </div>
           )}
         </div>

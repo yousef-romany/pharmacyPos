@@ -16,10 +16,10 @@ import { arSA } from 'date-fns/locale';
 
 // Define a simple type for dashboard stats
 type DashboardStat = {
-  title: string;
-  value: string | number;
-  icon: React.ElementType;
-  description?: string;
+    title: string;
+    value: string | number;
+    icon: React.ElementType;
+    description?: string;
 };
 
 // Define types for chart data
@@ -66,108 +66,122 @@ const categoryLabels: { [key: string]: string } = {
 
 
 export default function DashboardOverviewPage() {
-  const [stats, setStats] = React.useState<DashboardStat[]>([]);
-  const [categorySalesData, setCategorySalesData] = React.useState<CategorySalesData[]>([]);
-  const [lowStockProducts, setLowStockProducts] = React.useState<LowStockProduct[]>([]);
-  const [expiringSoonProducts, setExpiringSoonProducts] = React.useState<ProductExpiryInfo[]>([]);
-  const [expiredProducts, setExpiredProducts] = React.useState<ProductExpiryInfo[]>([]);
-  const [isLoading, setIsLoading] = React.useState(true);
+    const [stats, setStats] = React.useState<DashboardStat[]>([]);
+    const [categorySalesData, setCategorySalesData] = React.useState<CategorySalesData[]>([]);
+    const [lowStockProducts, setLowStockProducts] = React.useState<LowStockProduct[]>([]);
+    const [expiringSoonProducts, setExpiringSoonProducts] = React.useState<ProductExpiryInfo[]>([]);
+    const [expiredProducts, setExpiredProducts] = React.useState<ProductExpiryInfo[]>([]);
+    const [isLoading, setIsLoading] = React.useState(true);
 
-  const COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
-  const NEAR_EXPIRY_DAYS = 60; // Alert for products expiring within 60 days
+    const COLORS = ["hsl(var(--chart-1))", "hsl(var(--chart-2))", "hsl(var(--chart-3))", "hsl(var(--chart-4))", "hsl(var(--chart-5))"];
+    const NEAR_EXPIRY_DAYS = 60; // Alert for products expiring within 60 days
 
-  React.useEffect(() => {
-    async function loadDashboardData() {
-      setIsLoading(true);
-      try {
-        const [products, suppliers, customers, sales, purchases, nearingExpiry, expired] = await Promise.all([
-          getProducts(),
-          getSuppliers(),
-          getCustomers(),
-          getSales(),
-          getPurchases(),
-          getProductsNearingExpiry(NEAR_EXPIRY_DAYS), // Fetch products expiring soon
-          getExpiredProducts(), // Fetch expired products
-        ]);
+    React.useEffect(() => {
+        async function loadDashboardData() {
+            setIsLoading(true);
+            try {
+                const [products, suppliers, customers, sales, purchases, nearingExpiry, expired] = await Promise.all([
+                    getProducts(),
+                    getSuppliers(),
+                    getCustomers(),
+                    getSales(),
+                    getPurchases(),
+                    getProductsNearingExpiry(NEAR_EXPIRY_DAYS), // Fetch products expiring soon
+                    getExpiredProducts(), // Fetch expired products
+                ]);
 
-        // --- Calculate Stats ---
-        const totalSalesValue = sales.reduce((sum, sale) => sum + sale.totalAmount, 0);
-        const totalPurchaseValue = purchases.reduce((sum, purchase) => sum + purchase.totalAmount, 0);
+                // --- Calculate Stats ---
+                const totalSalesValue = sales.reduce((sum, sale) => sum + Number(sale.totalAmount || 0), 0);
+                const totalPurchaseValue = purchases.reduce((sum, purchase) => sum + Number(purchase.totalAmount || 0), 0);
 
-        const loadedStats: DashboardStat[] = [
-          { title: 'إجمالي المبيعات', value: `${totalSalesValue.toFixed(2)} ر.س`, icon: DollarSign, description: `من ${sales.length} فاتورة` },
-          { title: 'إجمالي المشتريات', value: `${totalPurchaseValue.toFixed(2)} ر.س`, icon: Truck, description: `من ${purchases.length} فاتورة` },
-          { title: 'عدد المنتجات', value: products.length, icon: Package, description: 'الأصناف المتوفرة' },
-          { title: 'عدد العملاء', value: customers.length, icon: Users, description: 'العملاء المسجلون' },
-          { title: 'عدد الموردين', value: suppliers.length, icon: ShoppingCart, description: 'الموردون المسجلون' },
-        ];
-        setStats(loadedStats);
+                console.log('DEBUG: totalSalesValue', totalSalesValue, typeof totalSalesValue);
+                console.log('DEBUG: totalPurchaseValue', totalPurchaseValue, typeof totalPurchaseValue);
 
-         // --- Calculate Category Sales ---
-         const salesByCategory: { [key: string]: { totalSales: number, label: string } } = {};
-          const productDetailsPromises = Array.from(new Set(sales.flatMap(s => s.items.map(i => i.productId))))
-              .map(id => getProductById(id)); // Fetch details for involved products
-          const productDetailsResults = await Promise.all(productDetailsPromises);
-          const productMap = new Map<string, Product | undefined>(
-             productDetailsResults.map(p => [p?.id || 'unknown', p])
-         );
+                const loadedStats: DashboardStat[] = [
+                    { title: 'إجمالي المبيعات', value: `${(typeof totalSalesValue === 'number' && !isNaN(totalSalesValue) ? totalSalesValue : 0).toFixed(2)} ج.م`, icon: DollarSign, description: `من ${sales.length} فاتورة` },
+                    { title: 'إجمالي المشتريات', value: `${(typeof totalPurchaseValue === 'number' && !isNaN(totalPurchaseValue) ? totalPurchaseValue : 0).toFixed(2)} ج.م`, icon: Truck, description: `من ${purchases.length} فاتورة` },
+                    { title: 'عدد المنتجات', value: products.length, icon: Package, description: 'الأصناف المتوفرة' },
+                    { title: 'عدد العملاء', value: customers.length, icon: Users, description: 'العملاء المسجلون' },
+                    { title: 'عدد الموردين', value: suppliers.length, icon: ShoppingCart, description: 'الموردون المسجلون' },
+                ];
+                setStats(loadedStats);
 
-         sales.forEach(sale => {
-             sale.items.forEach((item: SaleTransactionItem) => {
-                 const product = productMap.get(item.productId);
-                 const categoryKey = product ? getIconName(product.categoryIcon) : 'Unknown';
-                 const categoryLabel = categoryLabels[categoryKey] || categoryKey;
-                 const amount = item.price * item.quantity; // Use the price recorded at the time of sale
+                // --- Calculate Category Sales ---
+                const salesByCategory: { [key: string]: { totalSales: number, label: string } } = {};
+                const productDetailsPromises = Array.from(new Set(sales.flatMap(s => s.items.map(i => i.productId))))
+                    .map(id => getProductById(id)); // Fetch details for involved products
+                const productDetailsResults = await Promise.all(productDetailsPromises);
+                const productMap = new Map<string, Product | undefined>(
+                    productDetailsResults.map(p => [p?.id || 'unknown', p])
+                );
 
-                 if (!salesByCategory[categoryKey]) {
-                     salesByCategory[categoryKey] = { totalSales: 0, label: categoryLabel };
-                 }
-                 salesByCategory[categoryKey].totalSales += amount;
-             });
-         });
+                sales.forEach(sale => {
+                    sale.items.forEach((item: SaleTransactionItem) => {
+                        const product = productMap.get(item.productId);
+                        const categoryKey = product ? getIconName(product.categoryIcon) : 'Unknown';
+                        const categoryLabel = categoryLabels[categoryKey] || categoryKey;
+                        // Ensure price and quantity are treated as numbers
+                        const price = Number(item.price || 0);
+                        const quantity = Number(item.quantity || 0);
+                        const amount = price * quantity;
 
-        const categoryData: CategorySalesData[] = Object.entries(salesByCategory)
-            .map(([name, data], index) => ({
-                name: name,
-                label: data.label,
-                totalSales: data.totalSales,
-                fill: COLORS[index % COLORS.length],
-            }))
-            .sort((a, b) => b.totalSales - a.totalSales) // Sort by highest sales
-            .slice(0, 5); // Take top 5
+                        if (!salesByCategory[categoryKey]) {
+                            salesByCategory[categoryKey] = { totalSales: 0, label: categoryLabel };
+                        }
+                        salesByCategory[categoryKey].totalSales += amount;
+                    });
+                });
 
-        setCategorySalesData(categoryData);
+                const categoryData: CategorySalesData[] = Object.entries(salesByCategory)
+                    .map(([name, data], index) => ({
+                        name: name,
+                        label: data.label,
+                        totalSales: data.totalSales,
+                        fill: COLORS[index % COLORS.length],
+                    }))
+                    .sort((a, b) => b.totalSales - a.totalSales) // Sort by highest sales
+                    .slice(0, 5); // Take top 5
 
-        // --- Find Low Stock Products ---
-         const lowStock = products
-             .filter(p => p.minStockLevel !== undefined && p.quantity <= p.minStockLevel) // Check against minStockLevel
-             .sort((a, b) => a.quantity - b.quantity) // Sort by lowest quantity first
-             .map(p => ({ id: p.id, nameAr: p.nameAr, quantity: p.quantity, minStockLevel: p.minStockLevel }));
-         setLowStockProducts(lowStock);
+                setCategorySalesData(categoryData);
 
-         setExpiringSoonProducts(nearingExpiry);
-         setExpiredProducts(expired);
+                // --- Find Low Stock Products ---
+                const lowStock = products
+                    .filter(p => {
+                        const quantity = Number(p.quantity || 0);
+                        return p.minStockLevel !== undefined && quantity <= p.minStockLevel;
+                    }) // Check against minStockLevel
+                    .sort((a, b) => Number(a.quantity || 0) - Number(b.quantity || 0)) // Sort by lowest quantity first
+                    .map(p => ({
+                        id: p.id,
+                        nameAr: p.nameAr,
+                        quantity: Number(p.quantity || 0),
+                        minStockLevel: p.minStockLevel
+                    }));
+                setLowStockProducts(lowStock);
 
-      } catch (error) {
-        console.error("Failed to load dashboard data:", error);
-        // Handle error appropriately (e.g., show toast message)
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    loadDashboardData();
-  }, []); // Empty dependency array means this runs once on mount
+                setExpiringSoonProducts(nearingExpiry);
+                setExpiredProducts(expired);
+
+            } catch (error) {
+                console.error("Failed to load dashboard data:", error);
+                // Handle error appropriately (e.g., show toast message)
+            } finally {
+                setIsLoading(false);
+            }
+        }
+        loadDashboardData();
+    }, []); // Empty dependency array means this runs once on mount
 
 
     // Configuration for the category sales chart
     const chartConfig = React.useMemo(() => {
-      const config: ChartConfig = { totalSales: { label: "إجمالي المبيعات (ر.س)" } };
-      categorySalesData.forEach(cur => {
-          // Use the unique 'name' as the key for config
-          config[cur.name] = { label: cur.label, color: cur.fill };
-      });
-      return config;
-   }, [categorySalesData]); // Recompute when category data changes
+        const config: ChartConfig = { totalSales: { label: "إجمالي المبيعات (ج.م)" } };
+        categorySalesData.forEach(cur => {
+            // Use the unique 'name' as the key for config
+            config[cur.name] = { label: cur.label, color: cur.fill };
+        });
+        return config;
+    }, [categorySalesData]); // Recompute when category data changes
 
 
     // --- Reusable Alert List Component ---
@@ -215,7 +229,7 @@ export default function DashboardOverviewPage() {
                                             {alertType === 'expiringSoon' && `خلال ${item[itemValueKey]} يوم`}
                                             {alertType === 'expired' && `منذ ${Math.abs(item[itemValueKey])} يوم`}
                                         </span>
-                                         {itemDateKey && item[itemDateKey] && (
+                                        {itemDateKey && item[itemDateKey] && (
                                             <span className="text-xs text-muted-foreground whitespace-nowrap">
                                                 {/* Ensure date is valid before formatting */}
                                                 {new Date(item[itemDateKey]) instanceof Date && !isNaN(new Date(item[itemDateKey]).valueOf())
@@ -240,138 +254,138 @@ export default function DashboardOverviewPage() {
     );
 
 
-   return (
-     <div className="p-4 md:p-6 space-y-6">
-       <h2 className="text-2xl font-semibold">لوحة التحكم الرئيسية</h2>
+    return (
+        <div className="p-4 md:p-6 space-y-6">
+            <h2 className="text-2xl font-semibold">لوحة التحكم الرئيسية</h2>
 
-       {/* Stats Cards Section */}
-       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-           {isLoading ? (
-               Array.from({ length: 5 }).map((_, index) => (
-                   <Card key={index}>
-                       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                           <Skeleton className="h-4 w-2/4" />
-                           <Skeleton className="h-4 w-4 rounded-full" />
-                       </CardHeader>
-                       <CardContent>
-                           <Skeleton className="h-8 w-1/3 mb-2" />
-                           <Skeleton className="h-3 w-3/4" />
-                       </CardContent>
-                   </Card>
-               ))
-           ) : (
-               stats.map((stat, index) => (
-                   <Card key={index}>
-                       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                           <CardTitle className="text-sm font-medium">
-                               {stat.title}
-                           </CardTitle>
-                           {/* Render icon safely */}
-                           {React.createElement(stat.icon, { className: "h-4 w-4 text-muted-foreground" })}
-                       </CardHeader>
-                       <CardContent>
-                           <div className="text-2xl font-bold">{stat.value}</div>
-                           {stat.description && (
-                               <p className="text-xs text-muted-foreground pt-1">
-                                   {stat.description}
-                               </p>
-                           )}
-                       </CardContent>
-                   </Card>
-               ))
-           )}
-       </div>
+            {/* Stats Cards Section */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                {isLoading ? (
+                    Array.from({ length: 5 }).map((_, index) => (
+                        <Card key={index}>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <Skeleton className="h-4 w-2/4" />
+                                <Skeleton className="h-4 w-4 rounded-full" />
+                            </CardHeader>
+                            <CardContent>
+                                <Skeleton className="h-8 w-1/3 mb-2" />
+                                <Skeleton className="h-3 w-3/4" />
+                            </CardContent>
+                        </Card>
+                    ))
+                ) : (
+                    stats.map((stat, index) => (
+                        <Card key={index}>
+                            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                                <CardTitle className="text-sm font-medium">
+                                    {stat.title}
+                                </CardTitle>
+                                {/* Render icon safely */}
+                                {React.createElement(stat.icon, { className: "h-4 w-4 text-muted-foreground" })}
+                            </CardHeader>
+                            <CardContent>
+                                <div className="text-2xl font-bold">{stat.value}</div>
+                                {stat.description && (
+                                    <p className="text-xs text-muted-foreground pt-1">
+                                        {stat.description}
+                                    </p>
+                                )}
+                            </CardContent>
+                        </Card>
+                    ))
+                )}
+            </div>
 
 
-     {/* Charts and Alert Sections */}
-     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Category Sales Chart */}
-        <Card className="flex flex-col">
-          <CardHeader>
-            <CardTitle>المبيعات حسب الفئة (أعلى 5)</CardTitle>
-            <CardDescription>توزيع إجمالي المبيعات على فئات المنتجات.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex-1 pb-0">
-            {isLoading ? (
-                <div className="flex justify-center items-center h-full min-h-[250px]"> {/* Ensure skeleton has height */}
-                    <Skeleton className="w-48 h-48 rounded-full" />
-                </div>
-            ) : categorySalesData.length > 0 ? (
-              <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-[300px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                         <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="label" />} />
-                          <Pie
-                              data={categorySalesData}
-                              dataKey="totalSales"
-                              nameKey="label" // Use the display label for the chart legend/tooltip
-                              cx="50%"
-                              cy="50%"
-                              outerRadius={100}
-                              innerRadius={60}
-                              paddingAngle={2}
-                              labelLine={false}
-                          >
-                             {categorySalesData.map((entry) => (
-                                <Cell key={`cell-${entry.name}`} fill={entry.fill} /> // Use unique name for key
-                              ))}
-                          </Pie>
-                      </PieChart>
-                  </ResponsiveContainer>
-              </ChartContainer>
-            ) : (
-                <p className="text-muted-foreground text-center py-10 flex-1 flex items-center justify-center min-h-[250px]">لا توجد بيانات مبيعات لعرضها.</p>
-             )}
-          </CardContent>
-        </Card>
+            {/* Charts and Alert Sections */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Category Sales Chart */}
+                <Card className="flex flex-col">
+                    <CardHeader>
+                        <CardTitle>المبيعات حسب الفئة (أعلى 5)</CardTitle>
+                        <CardDescription>توزيع إجمالي المبيعات على فئات المنتجات.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="flex-1 pb-0">
+                        {isLoading ? (
+                            <div className="flex justify-center items-center h-full min-h-[250px]"> {/* Ensure skeleton has height */}
+                                <Skeleton className="w-48 h-48 rounded-full" />
+                            </div>
+                        ) : categorySalesData.length > 0 ? (
+                            <ChartContainer config={chartConfig} className="mx-auto aspect-square max-h-[300px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <ChartTooltip content={<ChartTooltipContent hideLabel nameKey="label" />} />
+                                        <Pie
+                                            data={categorySalesData}
+                                            dataKey="totalSales"
+                                            nameKey="label" // Use the display label for the chart legend/tooltip
+                                            cx="50%"
+                                            cy="50%"
+                                            outerRadius={100}
+                                            innerRadius={60}
+                                            paddingAngle={2}
+                                            labelLine={false}
+                                        >
+                                            {categorySalesData.map((entry) => (
+                                                <Cell key={`cell-${entry.name}`} fill={entry.fill} /> // Use unique name for key
+                                            ))}
+                                        </Pie>
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </ChartContainer>
+                        ) : (
+                            <p className="text-muted-foreground text-center py-10 flex-1 flex items-center justify-center min-h-[250px]">لا توجد بيانات مبيعات لعرضها.</p>
+                        )}
+                    </CardContent>
+                </Card>
 
-        {/* Low Stock Products */}
-         <AlertList
-            title="أصناف قاربت على النفاد"
-            description={`المنتجات التي كميتها أقل من أو تساوي حدها الأدنى.`}
-            icon={MinusCircle}
-            items={lowStockProducts}
-            itemKey="id"
-            itemValueKey="quantity"
-            linkPrefix="/products"
-            emptyMessage="لا توجد منتجات بقرب النفاد."
-            isLoading={isLoading}
-            alertType="lowStock"
-        />
-    </div>
+                {/* Low Stock Products */}
+                <AlertList
+                    title="أصناف قاربت على النفاد"
+                    description={`المنتجات التي كميتها أقل من أو تساوي حدها الأدنى.`}
+                    icon={MinusCircle}
+                    items={lowStockProducts}
+                    itemKey="id"
+                    itemValueKey="quantity"
+                    linkPrefix="/products"
+                    emptyMessage="لا توجد منتجات بقرب النفاد."
+                    isLoading={isLoading}
+                    alertType="lowStock"
+                />
+            </div>
 
-      {/* Expiry Alerts Section */}
-     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-         {/* Expiring Soon Products */}
-         <AlertList
-            title={`منتجات قاربت على الانتهاء (خلال ${NEAR_EXPIRY_DAYS} يوم)`}
-            icon={CalendarClock}
-            items={expiringSoonProducts}
-            itemKey="id"
-            itemValueKey="daysUntilExpiry"
-            itemDateKey="expiryDate" // Pass the key for the expiry date
-            linkPrefix="/products"
-            emptyMessage={`لا توجد منتجات ستنتهي خلال ${NEAR_EXPIRY_DAYS} يوم.`}
-            isLoading={isLoading}
-            alertType="expiringSoon"
-        />
+            {/* Expiry Alerts Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Expiring Soon Products */}
+                <AlertList
+                    title={`منتجات قاربت على الانتهاء (خلال ${NEAR_EXPIRY_DAYS} يوم)`}
+                    icon={CalendarClock}
+                    items={expiringSoonProducts}
+                    itemKey="id"
+                    itemValueKey="daysUntilExpiry"
+                    itemDateKey="expiryDate" // Pass the key for the expiry date
+                    linkPrefix="/products"
+                    emptyMessage={`لا توجد منتجات ستنتهي خلال ${NEAR_EXPIRY_DAYS} يوم.`}
+                    isLoading={isLoading}
+                    alertType="expiringSoon"
+                />
 
-         {/* Expired Products */}
-          <AlertList
-            title="منتجات منتهية الصلاحية"
-            icon={CalendarX}
-            items={expiredProducts}
-            itemKey="id"
-            itemValueKey="daysUntilExpiry"
-             itemDateKey="expiryDate" // Pass the key for the expiry date
-            linkPrefix="/products"
-            emptyMessage="لا توجد منتجات منتهية الصلاحية."
-            isLoading={isLoading}
-            alertType="expired"
-        />
-     </div>
-   </div>
- );
+                {/* Expired Products */}
+                <AlertList
+                    title="منتجات منتهية الصلاحية"
+                    icon={CalendarX}
+                    items={expiredProducts}
+                    itemKey="id"
+                    itemValueKey="daysUntilExpiry"
+                    itemDateKey="expiryDate" // Pass the key for the expiry date
+                    linkPrefix="/products"
+                    emptyMessage="لا توجد منتجات منتهية الصلاحية."
+                    isLoading={isLoading}
+                    alertType="expired"
+                />
+            </div>
+        </div>
+    );
 }
 
 

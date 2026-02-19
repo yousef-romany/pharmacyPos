@@ -44,13 +44,13 @@ export interface SaleRepository extends Repository<SaleTransactionWithItems, any
    * Find sale by ID with all items
    * Uses JOIN to fetch sale and items in single query (eliminates N+1 pattern)
    */
-  findByIdWithItems(id: string): Promise<SaleTransactionWithItems | null>;
-  
+  findByIdWithItems(id: string, tx?: Transaction): Promise<SaleTransactionWithItems | null>;
+
   /**
    * Find all sales with optional filtering
    */
   findAllWithItems(options?: QueryOptions): Promise<SaleTransactionWithItems[]>;
-  
+
   /**
    * Find sales by date range
    */
@@ -69,9 +69,10 @@ export class SaleRepositoryImpl extends BaseRepository<any, any, any> implements
   /**
    * Find sale by ID with all items using JOIN
    * Eliminates N+1 query pattern (FR-005)
+   * @param tx Optional transaction context to use
    */
-  async findByIdWithItems(id: string): Promise<SaleTransactionWithItems | null> {
-    const db = await getDatabase();
+  async findByIdWithItems(id: string, tx?: Transaction): Promise<SaleTransactionWithItems | null> {
+    const db = tx || await getDatabase();
     const sql = `
       SELECT
         s.id,
@@ -99,8 +100,9 @@ export class SaleRepositoryImpl extends BaseRepository<any, any, any> implements
     `;
 
     try {
+      // Use db.select (works for both Transaction wrapper and raw DB plugin)
       const result = await executeWithTimingAndParams(
-        () => db.execute(sql, [id]),
+        () => db.select(sql, [id]),
         sql,
         [id],
         'FIND_SALE_WITH_ITEMS'
@@ -113,7 +115,7 @@ export class SaleRepositoryImpl extends BaseRepository<any, any, any> implements
       // Group items by sale
       const sale = result[0];
       const items: SaleTransactionItem[] = [];
-      
+
       for (const row of result) {
         if (row.itemId) {
           items.push({
@@ -186,7 +188,7 @@ export class SaleRepositoryImpl extends BaseRepository<any, any, any> implements
 
     try {
       const result = await executeWithTimingAndParams(
-        () => db.execute(sql, params),
+        () => db.select(sql, params),
         sql,
         params,
         'FIND_ALL_SALES_WITH_ITEMS'
@@ -194,11 +196,11 @@ export class SaleRepositoryImpl extends BaseRepository<any, any, any> implements
 
       // Group items by sale
       const salesMap = new Map<string, SaleTransactionWithItems>();
-      
+
       for (const row of result) {
         if (!salesMap.has(row.id)) {
           const items: SaleTransactionItem[] = [];
-          
+
           for (const r of result) {
             if (r.id === row.id && r.itemId) {
               items.push({
@@ -260,7 +262,7 @@ export class SaleRepositoryImpl extends BaseRepository<any, any, any> implements
 
     try {
       const result = await executeWithTimingAndParams(
-        () => db.execute(sql, [startDate, endDate]),
+        () => db.select(sql, [startDate, endDate]),
         sql,
         [startDate, endDate],
         'FIND_SALES_BY_DATE_RANGE'
@@ -268,11 +270,11 @@ export class SaleRepositoryImpl extends BaseRepository<any, any, any> implements
 
       // Group items by sale
       const salesMap = new Map<string, SaleTransactionWithItems>();
-      
+
       for (const row of result) {
         if (!salesMap.has(row.id)) {
           const items: SaleTransactionItem[] = [];
-          
+
           for (const r of result) {
             if (r.id === row.id && r.itemId) {
               items.push({

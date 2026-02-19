@@ -1,0 +1,37 @@
+name: Windows 7 32-bit Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-win32:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-pc-windows-msvc
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build for Windows 32-bit
+        run: bun tauri build --target i686-pc-windows-msvc
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PharmacyPos-Win7-32bit
+          path: src-tauri/target/i686-pc-windows-msvc/release/bundle/nsis/*.exe
+          if-no-files-found: warn

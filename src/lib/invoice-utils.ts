@@ -7,7 +7,7 @@ import { getProducts } from './data';
 export async function getInvoiceTranslationsForLanguage(languageCode: string): Promise<Record<string, string>> {
   // In a real app, this would fetch from the database
   // For now, we'll return hardcoded translations
-  
+
   const translations: Record<string, Record<string, string>> = {
     ar: {
       invoice: 'فاتورة',
@@ -91,7 +91,7 @@ export function generateInvoiceNumber(saleId: string): string {
 export function formatCurrency(amount: number, language: string = 'en'): string {
   const formatted = amount.toFixed(2);
   if (language === 'ar') {
-    return `${formatted} ر.س`;
+    return `${formatted} ج.م`;
   }
   return `${formatted} EGP`;
 }

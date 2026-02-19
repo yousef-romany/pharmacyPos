@@ -14,9 +14,9 @@ import { Button } from '@/components/ui/button';
 
 // Helper function to safely parse floats (can be moved to utils)
 const safeParseFloat = (value: string | number | null | undefined, defaultValue = 0): number => {
-    if (value === null || value === undefined) return defaultValue;
-    const parsed = parseFloat(value.toString());
-    return isNaN(parsed) ? defaultValue : parsed;
+  if (value === null || value === undefined) return defaultValue;
+  const parsed = parseFloat(value.toString());
+  return isNaN(parsed) ? defaultValue : parsed;
 };
 
 export default function DebtsReportPage() {
@@ -57,26 +57,26 @@ export default function DebtsReportPage() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-             <div className="grid grid-cols-2 gap-4 text-center">
-                 <div>
-                     <p className="text-sm text-muted-foreground">عدد العملاء المدينين</p>
-                     <Skeleton className="h-8 w-16 mx-auto mt-1" />
-                 </div>
-                  <div>
-                     <p className="text-sm text-muted-foreground">إجمالي المديونية</p>
-                     <Skeleton className="h-8 w-24 mx-auto mt-1" />
-                  </div>
-             </div>
+            <div className="grid grid-cols-2 gap-4 text-center">
+              <div>
+                <p className="text-sm text-muted-foreground">عدد العملاء المدينين</p>
+                <Skeleton className="h-8 w-16 mx-auto mt-1" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">إجمالي المديونية</p>
+                <Skeleton className="h-8 w-24 mx-auto mt-1" />
+              </div>
+            </div>
           ) : (
             <div className="grid grid-cols-2 gap-4 text-center">
-                <div>
-                    <p className="text-sm text-muted-foreground">عدد العملاء المدينين</p>
-                    <p className="text-2xl font-bold">{debtors.length}</p>
-                </div>
-                 <div>
-                    <p className="text-sm text-muted-foreground">إجمالي المديونية</p>
-                    <p className="text-2xl font-bold text-red-600">{totalDebt.toFixed(2)} ر.س</p>
-                 </div>
+              <div>
+                <p className="text-sm text-muted-foreground">عدد العملاء المدينين</p>
+                <p className="text-2xl font-bold">{debtors.length}</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">إجمالي المديونية</p>
+                <p className="text-2xl font-bold text-red-600">{totalDebt.toFixed(2)} ج.م</p>
+              </div>
             </div>
           )}
         </CardContent>
@@ -85,7 +85,7 @@ export default function DebtsReportPage() {
       <Card>
         <CardHeader>
           <CardTitle>تفاصيل مديونيات العملاء</CardTitle>
-           <CardDescription>قائمة بالعملاء الذين لديهم رصيد سالب (مديونية).</CardDescription>
+          <CardDescription>قائمة بالعملاء الذين لديهم رصيد سالب (مديونية).</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="rounded-md border">
@@ -110,23 +110,23 @@ export default function DebtsReportPage() {
                   ))
                 ) : debtors.length > 0 ? (
                   debtors.map((customer) => {
-                      const balanceNum = safeParseFloat(customer.balance);
-                      return (
-                          <TableRow key={customer.id}>
-                              <TableCell className="font-medium">{customer.name}</TableCell>
-                              <TableCell>{customer.phone || '-'}</TableCell>
-                              <TableCell className={cn("font-semibold", balanceNum < 0 ? "text-red-600" : "text-muted-foreground")}>
-                                  {balanceNum.toFixed(2)} ر.س
-                              </TableCell>
-                              <TableCell>
-                                 <Button variant="outline" size="sm" asChild>
-                                    <Link href={`/customers?search=${customer.id}`}>عرض</Link>
-                                 </Button>
-                                 {/* Add action for payment collection later */}
-                              </TableCell>
-                          </TableRow>
-                      );
-                    })
+                    const balanceNum = safeParseFloat(customer.balance);
+                    return (
+                      <TableRow key={customer.id}>
+                        <TableCell className="font-medium">{customer.name}</TableCell>
+                        <TableCell>{customer.phone || '-'}</TableCell>
+                        <TableCell className={cn("font-semibold", balanceNum < 0 ? "text-red-600" : "text-muted-foreground")}>
+                          {balanceNum.toFixed(2)} ج.م
+                        </TableCell>
+                        <TableCell>
+                          <Button variant="outline" size="sm" asChild>
+                            <Link href={`/customers?search=${customer.id}`}>عرض</Link>
+                          </Button>
+                          {/* Add action for payment collection later */}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 ) : (
                   <TableRow>
                     <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
@@ -137,7 +137,7 @@ export default function DebtsReportPage() {
               </TableBody>
             </Table>
           </div>
-           {/* Add Pagination if needed */}
+          {/* Add Pagination if needed */}
         </CardContent>
       </Card>
     </div>

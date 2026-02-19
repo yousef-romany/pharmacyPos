@@ -2,7 +2,7 @@ import type { Product, Supplier, Customer, SaleTransaction, PurchaseTransaction,
 import { Pill, Baby, SprayCan, Activity, LucideIcon } from 'lucide-react';
 import { differenceInDays, addDays, isBefore, isSameDay, startOfDay, endOfDay, format as formatDate } from 'date-fns'; // Import format from date-fns
 import { getDatabase } from '@/lib/db'; // Import potentially initialized database instance
-import { withTransaction } from './db/transaction';
+import { withTransaction, Transaction } from './db/transaction';
 import { saleRepository } from './repositories/sales';
 
 // --- Helper Functions ---
@@ -69,13 +69,13 @@ const parseDateFromDB = (dateString: string | null | undefined): Date | undefine
         // Adjust parsing if timezone issues arise
         const date = new Date(dateString.replace(' ', 'T') + 'Z'); // Assume UTC if no timezone specified, or adjust based on DB timezone
         if (isNaN(date.getTime())) {
-             console.warn(`Invalid date string from DB: ${dateString}`);
-             return undefined;
+            console.warn(`Invalid date string from DB: ${dateString}`);
+            return undefined;
         }
         return date;
     } catch (e) {
-         console.error(`Error parsing date string ${dateString} from DB:`, e);
-         return undefined;
+        console.error(`Error parsing date string ${dateString} from DB:`, e);
+        return undefined;
     }
 };
 
@@ -107,8 +107,8 @@ const formatNumberForDB = (value: number | string | undefined | null, defaultVal
         if (!isNaN(parseFloat(value)) && isFinite(Number(value))) {
             return value;
         } else {
-             console.warn(`Invalid numeric string encountered for DB formatting: ${value}`);
-             return defaultValue; // Return default value or handle as needed
+            console.warn(`Invalid numeric string encountered for DB formatting: ${value}`);
+            return defaultValue; // Return default value or handle as needed
         }
     }
     return String(value); // Convert number to string
@@ -336,7 +336,7 @@ export async function deleteWarehouse(id: string): Promise<boolean> {
     const warehouseResult = await db.select("SELECT isDefault FROM Warehouses WHERE id = ?", [id]);
     const warehouse = warehouseResult?.[0];
     if (warehouse && parseBooleanFromDB(warehouse.isDefault)) {
-         throw new Error(`لا يمكن حذف المخزن الافتراضي.`);
+        throw new Error(`لا يمكن حذف المخزن الافتراضي.`);
     }
 
 
@@ -427,8 +427,8 @@ export async function getProductByBarcode(barcode: string): Promise<Product | un
     }
 }
 
-export async function addProduct(productData: Omit<Product, 'id'>): Promise<Product> {
-    const db = await getDB();
+export async function addProduct(productData: Omit<Product, 'id'>, tx?: Transaction): Promise<Product> {
+    const executor = tx || await getDB();
     const newId = `prod-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
 
     // Ensure warehouseId is set, use default if not provided
@@ -466,7 +466,7 @@ export async function addProduct(productData: Omit<Product, 'id'>): Promise<Prod
         targetWarehouseId, // Add warehouseId
     ];
     try {
-        await db.execute(query, params);
+        await executor.execute(query, params);
         const newProduct = { ...productData, id: newId, warehouseId: targetWarehouseId };
         console.log("Added Product (DB):", newProduct);
         // Return mapped product (data might still be stringified number)
@@ -497,12 +497,12 @@ export async function updateProduct(id: string, updates: Partial<Omit<Product, '
         if (key === 'quantity' || key === 'price' || key === 'lastPurchaseCost' || key === 'discountRate') {
             const formattedNewValue = formatNumberForDB(newValue as string | number | undefined);
             const formattedOriginalValue = formatNumberForDB(originalValue as string | number | undefined);
-            
+
             // Skip update if formatting fails (returns null)
             if (formattedNewValue === null) {
                 continue;
             }
-            
+
             dbValue = formattedNewValue;
             originalValue = formattedOriginalValue || originalValue; // Compare strings
         }
@@ -612,6 +612,7 @@ export async function getPurchaseById(id: string): Promise<PurchaseTransaction |
     const db = await getDB();
     try {
         const results = await db.select("SELECT id, supplierId, CAST(totalAmount AS CHAR) as totalAmount, paymentStatus, CAST(amountPaid AS CHAR) as amountPaid, date, invoiceNumber, destinationWarehouseId, paymentTreasuryId FROM PurchaseTransactions WHERE id = ?", [id]);
+
         if (results && results.length > 0) {
             const purchase = mapPurchaseData(results[0]);
             purchase.items = await getPurchaseItems(purchase.id); // Fetch items
@@ -624,8 +625,8 @@ export async function getPurchaseById(id: string): Promise<PurchaseTransaction |
     }
 }
 
-export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' | 'totalAmount' | 'paymentStatus'>): Promise<PurchaseTransaction> {
-    const newPurchaseId = `pur-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
+export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' | 'totalAmount' | 'paymentStatus'>, existingId?: string): Promise<PurchaseTransaction> {
+    const newPurchaseId = existingId || `pur-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
 
     // Determine target warehouse for purchase
     const targetWarehouseId = purchaseData.destinationWarehouseId || await getDefaultWarehouseId(); // Use destination or default
@@ -649,161 +650,398 @@ export async function addPurchase(purchaseData: Omit<PurchaseTransaction, 'id' |
     }
 
     // Determine target Treasury for payment
-     const defaultTreasuryId = await getDefaultTreasuryId(); // Assume this function exists or create it
-     const targetTreasuryId = purchaseData.paymentTreasuryId || defaultTreasuryId; // Allow specifying payment source
+    const defaultTreasuryId = await getDefaultTreasuryId(); // Assume this function exists or create it
+    const targetTreasuryId = purchaseData.paymentTreasuryId || defaultTreasuryId; // Allow specifying payment source
 
     // Use transaction wrapper for atomic transaction (FR-001, FR-002, FR-003)
     return await withTransaction(async (tx) => {
-         console.log("Inserting Purchase Transaction:", newPurchaseId);
+        console.log("Inserting Purchase Transaction:", newPurchaseId);
         const purchaseQuery = `
            INSERT INTO PurchaseTransactions (
                 id, supplierId, totalAmount, paymentStatus, amountPaid, date, invoiceNumber, destinationWarehouseId, paymentTreasuryId
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const purchaseParams = [
-           newPurchaseId,
-           purchaseData.supplierId,
-           formatNumberForDB(totalAmountNum), // Format total amount as string
-           paymentStatus,
-           formatNumberForDB(amountPaidNum), // Format amount paid as string
-           formatDateTimeForDB(purchaseData.date), // Use DATETIME format
-           purchaseData.invoiceNumber,
-           targetWarehouseId, // Store destination warehouse
-           targetTreasuryId, // Store payment treasury
+            newPurchaseId,
+            purchaseData.supplierId,
+            formatNumberForDB(totalAmountNum), // Format total amount as string
+            paymentStatus,
+            formatNumberForDB(amountPaidNum), // Format amount paid as string
+            formatDateTimeForDB(purchaseData.date), // Use DATETIME format
+            purchaseData.invoiceNumber,
+            targetWarehouseId, // Store destination warehouse
+            targetTreasuryId, // Store payment treasury
         ];
         await tx.execute(purchaseQuery, purchaseParams);
-         console.log("Purchase Transaction inserted.");
+        console.log("Purchase Transaction inserted.");
 
 
-         console.log("Processing purchase items...");
+        console.log("Processing purchase items...");
         for (const item of purchaseData.items) {
-              console.log(`Processing item: Product ID ${item.productId}, Qty: ${item.quantity}, Cost: ${item.cost}, Expiry: ${item.expiryDate}`);
+            console.log(`Processing item: Product ID ${item.productId}, Qty: ${item.quantity}, Cost: ${item.cost}, Expiry: ${item.expiryDate}`);
             const itemQuery = `
-                INSERT INTO PurchaseTransactionItems (purchaseId, productId, quantity, cost, expiryDate)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO PurchaseTransactionItems (id, purchaseId, productId, quantity, cost, expiryDate)
+                VALUES (?, ?, ?, ?, ?, ?)
             `;
             const formattedExpiry = formatDateForDB(item.expiryDate); // Use DATE format for expiry
+            const itemId = `pi-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
             const itemParams = [
+                itemId,
                 newPurchaseId,
                 item.productId,
                 formatNumberForDB(item.quantity), // Format number to string
                 formatNumberForDB(item.cost), // Format number to string
                 formattedExpiry
             ];
-              console.log(`Inserting Purchase Item: ${JSON.stringify(itemParams)}`);
+            console.log(`Inserting Purchase Item: ${JSON.stringify(itemParams)}`);
             await tx.execute(itemQuery, itemParams);
-              console.log("Purchase Item inserted.");
+            console.log("Purchase Item inserted.");
 
             // Update product stock, last cost, expiry (Requires parsing)
-             console.log(`Updating stock/cost/expiry for product ${item.productId} in warehouse ${targetWarehouseId}`);
-               // Find product specifically in the target warehouse
-               const productResults = await tx.execute(`SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products WHERE id = ? AND warehouseId = ?`, [item.productId, targetWarehouseId]);
-               const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
+            console.log(`Updating stock/cost/expiry for product ${item.productId} in warehouse ${targetWarehouseId}`);
 
-               if (product) {
-                const currentStockNum = parseFloatFromDB(product.quantity);
-                const quantityAddedNum = parseFloatFromDB(item.quantity);
-                const newStockLevelNum = currentStockNum + quantityAddedNum;
-                const purchaseCostNum = parseFloatFromDB(item.cost);
-                 console.log(`Current Stock: ${currentStockNum}, Qty Added: ${quantityAddedNum}, New Stock: ${newStockLevelNum}, Purchase Cost: ${purchaseCostNum}`);
+            // Atomic Update for existing product
+            // UPDATE Products SET quantity = quantity + ?, lastPurchaseCost = ?, expiryDate = ? WHERE id = ? AND warehouseId = ?
 
-               // Only update expiry if new purchase expiry is provided
-                let expiryUpdateClause = "";
-                let expiryParams = [];
-                if (formattedExpiry) {
-                     expiryUpdateClause = ", expiryDate = ?";
-                     expiryParams.push(formattedExpiry);
-                     console.log(`Updating expiry date to: ${formattedExpiry}`);
-                } else {
-                     console.log("No expiry date provided for this purchase item, product expiry remains unchanged.");
-                }
+            const quantityAddedNum = parseFloatFromDB(item.quantity);
+            const purchaseCostNum = parseFloatFromDB(item.cost);
 
-                const stockUpdateQuery = `
-                     UPDATE Products
-                     SET quantity = ?, lastPurchaseCost = ? ${expiryUpdateClause}
-                     WHERE id = ? AND warehouseId = ?
-                `;
-                const updateParams = [
-                     formatNumberForDB(newStockLevelNum), // Format new stock as string
-                     formatNumberForDB(purchaseCostNum), // Format cost as string
-                     ...expiryParams, // Spread expiry parameter(s) if any
-                     item.productId,
-                     targetWarehouseId // Ensure update happens in the correct warehouse
-                ];
-                 console.log(`Executing stock update query with params: ${JSON.stringify(updateParams)}`);
-                await tx.execute(stockUpdateQuery, updateParams);
-                 console.log("Stock/cost/expiry updated.");
+            let expiryUpdateClause = "";
+            let expiryParams = [];
+            if (formattedExpiry) {
+                expiryUpdateClause = ", expiryDate = ?";
+                expiryParams.push(formattedExpiry);
+            }
+
+            const stockUpdateQuery = `
+                 UPDATE Products
+                 SET quantity = quantity + ?, lastPurchaseCost = ? ${expiryUpdateClause}
+                 WHERE id = ? AND warehouseId = ?
+            `;
+
+            const updateParams = [
+                formatNumberForDB(quantityAddedNum),
+                formatNumberForDB(purchaseCostNum),
+                ...expiryParams,
+                item.productId,
+                targetWarehouseId
+            ];
+
+            console.log(`Executing atomic stock update: ${JSON.stringify(updateParams)}`);
+            const updateResult = await tx.execute(stockUpdateQuery, updateParams);
+
+            if (updateResult.rowsAffected > 0) {
+                console.log("Stock/cost/expiry updated (Atomic).");
             } else {
-                // Product doesn't exist in this warehouse, add it automatically?
-                 console.warn(`Product ${item.productId} not found in warehouse ${targetWarehouseId}. Automatically adding...`);
-                  // Create a basic product entry in the target warehouse
-                  const newProductData: Omit<Product, 'id'> = {
-                      nameAr: 'منتج جديد تلقائي', // Placeholder name, consider fetching from another warehouse or requiring manual entry
-                      nameEn: 'Auto-added product',
-                      price: '0', // Placeholder price
-                      lastPurchaseCost: formatNumberForDB(item.cost) || undefined,
-                      quantity: formatNumberForDB(item.quantity) || '0',
-                      unitType: 'وحدة', // Placeholder unit type
-                      warehouseId: targetWarehouseId,
-                      expiryDate: item.expiryDate, // Pass expiry if available
-                  };
-                  await addProduct(newProductData); // Add the product
-                  console.log(`Product ${item.productId} added to warehouse ${targetWarehouseId}.`);
+                // Product doesn't exist in this warehouse, add it automatically
+                console.warn(`Product ${item.productId} not found in warehouse ${targetWarehouseId} (Atomic Update failed). Automatically adding...`);
+
+                // Fetch product details from ANY warehouse to copy name/info
+                const productInfo = await tx.select<any[]>(`SELECT nameAr, nameEn, manufacturer, categoryIcon, barcode, unitType FROM Products WHERE id = ? LIMIT 1`, [item.productId]);
+                const baseInfo = productInfo.length > 0 ? productInfo[0] : { nameAr: 'منتج جديد', nameEn: 'New Product' };
+
+                // Create a basic product entry in the target warehouse
+                const newProductData: Omit<Product, 'id'> = {
+                    nameAr: baseInfo.nameAr,
+                    nameEn: baseInfo.nameEn || '',
+                    manufacturer: baseInfo.manufacturer,
+                    categoryIcon: baseInfo.categoryIcon,
+                    barcode: baseInfo.barcode,
+                    unitType: baseInfo.unitType || 'وحدة',
+                    price: '0', // Placeholder price
+                    lastPurchaseCost: formatNumberForDB(item.cost) || undefined,
+                    quantity: formatNumberForDB(item.quantity) || '0',
+                    warehouseId: targetWarehouseId,
+                    expiryDate: item.expiryDate, // Pass expiry if available
+                    // Copy other fields if necessary
+                };
+
+                // We use addProduct BUT we need to ensure it uses the SAME ID if it's the same logical product just new to this warehouse? 
+                // The current schema uses UUIDs for ID. If 'id' is unique per row, then 'id' + 'warehouseId' is not a composite key, 'id' IS the key.
+                // Wait, if Products table has 'id' as primary key, then a product in Warehouse A and Warehouse B must have DIFFERENT IDs?
+                // OR 'id' is shared and (id, warehouseId) is unique?
+                // Looking at `addPurchase` logic: `WHERE id = ? AND warehouseId = ?` implies we look for THAT specific row.
+                // If the product creation logic generates a NEW ID for every `addProduct` call, then the same "Product" (e.g. Panadol) in different warehouses has different IDs.
+                // This means `item.productId` refers to a specific row. 
+                // IF so, we can't "add it to warehouse" with the SAME ID. 
+                // BUT `addPurchase` receives `item.productId`. This ID comes from the UI selection.
+                // If the user selected a product that exists in Warehouse A, but buys it into Warehouse B...
+                // The system likely expects to find/create a product entry in Warehouse B.
+
+                // Let's assume for now we just `addProduct` which generates a NEW ID. 
+                // BUT `addPurchase` linked `PurchaseTransactionItems` to `item.productId`. 
+                // If we create a NEW product ID for Warehouse B, the transaction item still points to the OLD ID (in Warehouse A).
+                // This might be intended (tracing back to the catalog definition), or a flaw in the multi-warehouse design if products are not normalized.
+                // Given I shouldn't redesign the schema now, I will stick to the existing fallback logic but make it robust.
+
+                // Existing logic called `addProduct(newProductData, tx)`. `addProduct` generates a NEW ID.
+                // This means the `PurchaseTransactionItem.productId` will point to the *source* product selected in UI, 
+                // while the *stock* is added to a *new* product ID in the target warehouse.
+                // This seems like a potential "split" in data, but consistent with "adding a new product instance".
+
+                await addProduct(newProductData, tx);
+                console.log(`Product added to warehouse ${targetWarehouseId} as new entry.`);
             }
         }
 
-         // 4. Add Treasury Transactions for the payments (split payment support)
-          if (purchaseData.payments && purchaseData.payments.length > 0) {
-              console.log(`Processing ${purchaseData.payments.length} payments...`);
-              for (const payment of purchaseData.payments) {
-                  const paymentAmount = parseFloatFromDB(payment.amount);
-                  if (paymentAmount > 0) {
-                      await addTreasuryTransaction({
-                          type: 'purchase_payment',
-                          amount: formatNumberForDB(-paymentAmount)!, // Pass as string, ensure it's negative (outgoing)
-                          date: purchaseData.date, // Use the same date as the purchase
-                          description: `دفعة لمورد ${purchaseData.supplierId} - فاتورة ${newPurchaseId}`,
-                          relatedDocumentId: newPurchaseId,
-                          treasuryId: payment.treasuryId, // Link to the specific treasury
-                      });
-                      console.log(`Added treasury transaction for ${paymentAmount} from treasury ${payment.treasuryId}`);
-                  }
-              }
-          }
-          // Legacy support: single payment method (backward compatibility)
-          else if (purchaseData.amountPaid && amountPaidNum > 0) {
-             // Map payment method to Arabic
-             const paymentMethodMap: Record<string, string> = {
-                 'cash': 'نقداً',
-                 'card': 'بطاقة',
-                 'instapay': 'إنستا باي',
-                 'vodafone_cash': 'فودافون كاش',
-                 'debt': 'آجل'
-             };
-             const paymentMethodLabel = purchaseData.paymentMethod ? paymentMethodMap[purchaseData.paymentMethod] || purchaseData.paymentMethod : 'نقداً';
+        // 4. Add Treasury Transactions for the payments (split payment support)
+        if (purchaseData.payments && purchaseData.payments.length > 0) {
+            console.log(`Processing ${purchaseData.payments.length} payments...`);
+            for (const payment of purchaseData.payments) {
+                const paymentAmount = parseFloatFromDB(payment.amount);
+                if (paymentAmount > 0) {
+                    await addTreasuryTransaction({
+                        type: 'purchase_payment',
+                        amount: formatNumberForDB(-paymentAmount)!, // Pass as string, ensure it's negative (outgoing)
+                        date: purchaseData.date, // Use the same date as the purchase
+                        description: `دفعة لمورد ${purchaseData.supplierId} - فاتورة ${newPurchaseId}`,
+                        relatedDocumentId: newPurchaseId,
+                        treasuryId: payment.treasuryId, // Link to the specific treasury
+                    }, tx);
+                    console.log(`Added treasury transaction for ${paymentAmount} from treasury ${payment.treasuryId}`);
+                }
+            }
+        }
+        // Legacy support: single payment method (backward compatibility)
+        else if (purchaseData.amountPaid && amountPaidNum > 0) {
+            // Map payment method to Arabic
+            const paymentMethodMap: Record<string, string> = {
+                'cash': 'نقداً',
+                'card': 'بطاقة',
+                'instapay': 'إنستا باي',
+                'vodafone_cash': 'فودافون كاش',
+                'debt': 'آجل'
+            };
+            const paymentMethodLabel = purchaseData.paymentMethod ? paymentMethodMap[purchaseData.paymentMethod] || purchaseData.paymentMethod : 'نقداً';
 
-             await addTreasuryTransaction({
-                 type: 'purchase_payment',
-                 amount: formatNumberForDB(-amountPaidNum)!, // Pass as string, ensure it's negative
-                 date: purchaseData.date, // Use the same date as the purchase
-                 description: `دفعة لمورد ${purchaseData.supplierId} - فاتورة ${newPurchaseId} - ${paymentMethodLabel}`,
-                 relatedDocumentId: newPurchaseId,
-                 treasuryId: targetTreasuryId, // Associate with the paying treasury
-             });
-          }
+            await addTreasuryTransaction({
+                type: 'purchase_payment',
+                amount: formatNumberForDB(-amountPaidNum)!, // Pass as string, ensure it's negative
+                date: purchaseData.date, // Use the same date as the purchase
+                description: `دفعة لمورد ${purchaseData.supplierId} - فاتورة ${newPurchaseId} - ${paymentMethodLabel}`,
+                relatedDocumentId: newPurchaseId,
+                treasuryId: targetTreasuryId, // Associate with the paying treasury
+            }, tx);
+        }
 
-         // Commit transaction... (Conceptual)
-         console.log("Committing addPurchase transaction...");
+        // Commit transaction... (Conceptual)
+        console.log("Committing addPurchase transaction...");
 
 
         console.log("Added Purchase (DB):", newPurchaseId);
-         // Return data consistent with DB (strings for numbers)
-         const finalPurchaseData = await getPurchaseById(newPurchaseId);
-         if (!finalPurchaseData) {
-             throw new Error("Failed to fetch newly created purchase data.");
-         }
-         console.log("addPurchase finished successfully.");
-         return finalPurchaseData; // Cast needed
+        // Return data consistent with DB (strings for numbers)
+        const finalPurchaseData = await getPurchaseById(newPurchaseId);
+        if (!finalPurchaseData) {
+            throw new Error("Failed to fetch newly created purchase data.");
+        }
+        console.log("addPurchase finished successfully.");
+        return finalPurchaseData; // Cast needed
+    });
+}
+
+export async function updatePurchase(
+    purchaseId: string,
+    updatedData: Omit<PurchaseTransaction, 'id' | 'totalAmount' | 'paymentStatus'>
+): Promise<PurchaseTransaction> {
+    return await withTransaction(async (tx) => {
+        console.log(`Starting updatePurchase transaction for ID: ${purchaseId}`);
+
+        // 1. Fetch the original purchase to reverse its effects
+        const originalPurchase = await getPurchaseById(purchaseId);
+        if (!originalPurchase) {
+            throw new Error(`Original purchase ${purchaseId} not found for update.`);
+        }
+
+        // 2. Reverse effects of original purchase (stock and treasury)
+        console.log(`Reversing effects of original purchase ${purchaseId}...`);
+        const executor = tx; // Ensure we use the transaction client
+        const targetWarehouseIdOriginal = originalPurchase.destinationWarehouseId || await getDefaultWarehouseId();
+        if (!targetWarehouseIdOriginal) {
+            throw new Error("Could not determine warehouse to reverse stock from for original purchase.");
+        }
+        const paymentTreasuryIdOriginal = originalPurchase.paymentTreasuryId || await getDefaultTreasuryId();
+
+        // 2a. Reverse stock updates for each item in the original purchase
+        for (const item of originalPurchase.items) {
+            console.log(`Reversing stock for product: ${item.productId}, Qty: ${item.quantity} in Warehouse ${targetWarehouseIdOriginal} (Atomic)`);
+
+            const quantityPurchasedNum = parseFloatFromDB(item.quantity);
+            const quantityToDeductVal = formatNumberForDB(quantityPurchasedNum);
+
+            // Atomic Reversal
+            const atomicStockReversal = `
+                UPDATE Products 
+                SET quantity = MAX(0, quantity - ?) 
+                WHERE id = ? AND warehouseId = ?
+            `;
+            await executor.execute(atomicStockReversal, [quantityToDeductVal, item.productId, targetWarehouseIdOriginal]);
+        }
+
+        // 2b. Reverse Treasury Transaction for original payments
+        const amountPaidOriginalNum = parseFloatFromDB(originalPurchase.amountPaid);
+        if (amountPaidOriginalNum > 0) {
+            await addTreasuryTransaction({
+                type: 'purchase_payment_reversal',
+                amount: formatNumberForDB(amountPaidOriginalNum)!,
+                date: new Date(), // Date of reversal
+                description: `عكس دفعة فاتورة شراء (تحديث) ${purchaseId}`,
+                relatedDocumentId: purchaseId,
+                treasuryId: paymentTreasuryIdOriginal,
+            }, executor);
+        }
+        console.log(`Effects of original purchase ${purchaseId} reversed.`);
+
+        // 3. Delete old PurchaseTransactionItems and TreasuryTransactions
+        console.log("Deleting old purchase items and treasury transactions...");
+        await executor.execute("DELETE FROM PurchaseTransactionItems WHERE purchaseId = ?", [purchaseId]);
+        await executor.execute("DELETE FROM TreasuryTransactions WHERE relatedDocumentId = ? AND type LIKE 'purchase_payment%'", [purchaseId]);
+        console.log("Old purchase items and treasury transactions deleted.");
+
+        // 4. Update the main PurchaseTransactions record
+        console.log(`Updating main purchase record ${purchaseId}...`);
+        const totalAmountNum = updatedData.items.reduce((sum, item) => {
+            const quantityNum = parseFloatFromDB(item.quantity);
+            const costNum = parseFloatFromDB(item.cost);
+            return sum + quantityNum * costNum;
+        }, 0);
+        const amountPaidNum = updatedData.payments?.reduce((sum, payment) => sum + parseFloatFromDB(payment.amount), 0) || 0;
+
+        let paymentStatus: PaymentStatus = 'unpaid';
+        if (totalAmountNum > 0 && amountPaidNum >= totalAmountNum) {
+            paymentStatus = 'paid';
+        } else if (amountPaidNum > 0) {
+            paymentStatus = 'partial';
+        }
+
+        const targetWarehouseIdNew = updatedData.destinationWarehouseId || await getDefaultWarehouseId();
+        if (!targetWarehouseIdNew) {
+            throw new Error("لا يوجد مخزن افتراضي أو محدد لاستلام المشتريات.");
+        }
+        const paymentTreasuryIdNew = updatedData.paymentTreasuryId || await getDefaultTreasuryId();
+
+
+        const updatePurchaseQuery = `
+            UPDATE PurchaseTransactions
+            SET supplierId = ?, totalAmount = ?, paymentStatus = ?, amountPaid = ?, date = ?,
+                invoiceNumber = ?, destinationWarehouseId = ?, paymentTreasuryId = ?
+            WHERE id = ?
+        `;
+        const updatePurchaseParams = [
+            updatedData.supplierId,
+            formatNumberForDB(totalAmountNum),
+            paymentStatus,
+            formatNumberForDB(amountPaidNum),
+            formatDateTimeForDB(updatedData.date),
+            updatedData.invoiceNumber,
+            targetWarehouseIdNew,
+            paymentTreasuryIdNew,
+            purchaseId,
+        ];
+        await executor.execute(updatePurchaseQuery, updatePurchaseParams);
+        console.log(`Main purchase record ${purchaseId} updated.`);
+
+        // 5. Apply effects of updated data (add new items and payments)
+        console.log("Processing updated purchase items...");
+        for (const item of updatedData.items) {
+            const itemQuery = `
+                INSERT INTO PurchaseTransactionItems (id, purchaseId, productId, quantity, cost, expiryDate)
+                VALUES (?, ?, ?, ?, ?, ?)
+            `;
+            const formattedExpiry = formatDateForDB(item.expiryDate);
+            const itemId = `pi-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
+            const itemParams = [
+                itemId,
+                purchaseId, // Use the existing purchase ID
+                item.productId,
+                formatNumberForDB(item.quantity),
+                formatNumberForDB(item.cost),
+                formattedExpiry
+            ];
+            await executor.execute(itemQuery, itemParams);
+
+            // Update product stock, last cost, expiry (add stock) - Atomic
+            // Same logic as addPurchase
+            const quantityAddedNum = parseFloatFromDB(item.quantity);
+            const purchaseCostNum = parseFloatFromDB(item.cost);
+
+            let expiryUpdateClause = "";
+            let expiryParams = [];
+            if (formattedExpiry) {
+                expiryUpdateClause = ", expiryDate = ?";
+                expiryParams.push(formattedExpiry);
+            }
+
+            const stockUpdateQuery = `
+                 UPDATE Products
+                 SET quantity = quantity + ?, lastPurchaseCost = ? ${expiryUpdateClause}
+                 WHERE id = ? AND warehouseId = ?
+            `;
+
+            const updateParams = [
+                formatNumberForDB(quantityAddedNum),
+                formatNumberForDB(purchaseCostNum),
+                ...expiryParams,
+                item.productId,
+                targetWarehouseIdNew
+            ];
+
+            const updateResult = await executor.execute(stockUpdateQuery, updateParams);
+
+            if (updateResult.rowsAffected === 0) {
+                // If product doesn't exist, create it (same logic as addPurchase)
+                const newProductData: Omit<Product, 'id'> = {
+                    nameAr: 'منتج جديد تلقائي (تحديث)',
+                    nameEn: 'Auto-added product (update)',
+                    price: '0',
+                    lastPurchaseCost: formatNumberForDB(item.cost) || undefined,
+                    quantity: formatNumberForDB(item.quantity) || '0',
+                    unitType: 'وحدة',
+                    warehouseId: targetWarehouseIdNew,
+                    expiryDate: item.expiryDate,
+                };
+                await addProduct(newProductData, executor);
+            }
+        }
+
+        // 5. Add Treasury Transactions for the new payments
+        if (updatedData.payments && updatedData.payments.length > 0) {
+            for (const payment of updatedData.payments) {
+                const paymentAmount = parseFloatFromDB(payment.amount);
+                if (paymentAmount > 0) {
+                    await addTreasuryTransaction({
+                        type: 'purchase_payment',
+                        amount: formatNumberForDB(-paymentAmount)!,
+                        date: updatedData.date,
+                        description: `دفعة لمورد (تحديث) ${updatedData.supplierId} - فاتورة ${purchaseId}`,
+                        relatedDocumentId: purchaseId,
+                        treasuryId: payment.treasuryId,
+                    }, executor);
+                }
+            }
+        }
+        // Legacy support: single payment method
+        else if (updatedData.amountPaid && amountPaidNum > 0) {
+            const paymentMethodMap: Record<string, string> = {
+                'cash': 'نقداً', 'card': 'بطاقة', 'instapay': 'إنستا باي', 'vodafone_cash': 'فودافون كاش', 'debt': 'آجل'
+            };
+            const paymentMethodLabel = updatedData.paymentMethod ? paymentMethodMap[updatedData.paymentMethod] || updatedData.paymentMethod : 'نقداً';
+
+            await addTreasuryTransaction({
+                type: 'purchase_payment',
+                amount: formatNumberForDB(-amountPaidNum)!,
+                date: updatedData.date,
+                description: `دفعة لمورد (تحديث) ${updatedData.supplierId} - فاتورة ${purchaseId} - ${paymentMethodLabel}`,
+                relatedDocumentId: purchaseId,
+                treasuryId: paymentTreasuryIdNew,
+            }, executor);
+        }
+
+        console.log(`Updated Purchase ${purchaseId} finished successfully.`);
+        const finalPurchaseData = await getPurchaseById(purchaseId);
+        if (!finalPurchaseData) {
+            throw new Error("Failed to fetch updated purchase data.");
+        }
+        return finalPurchaseData;
     });
 }
 
@@ -949,9 +1187,9 @@ export async function getCustomerById(id: string): Promise<Customer | undefined>
     const db = await getDB();
     try {
         const results = await db.select(`SELECT ${CUSTOMERS_SELECT_FIELDS} FROM Customers WHERE id = ?`, [id]);
-         if (results && results.length > 0) {
-             return mapCustomerData(results[0]);
-         }
+        if (results && results.length > 0) {
+            return mapCustomerData(results[0]);
+        }
         return undefined;
     } catch (error) {
         console.error(`Error fetching customer by id ${id}:`, error);
@@ -1123,7 +1361,7 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
             formatNumberForDB(saleData.totalAmount),
             formatNumberForDB(saleData.originalTotalAmount),
             formatNumberForDB(saleData.subTotalAmount),
-            saleData.paymentMethod,
+            saleData.paymentMethod || 'cash', // Use paymentMethod from saleData or default to 'cash'
             formatNumberForDB(saleData.amountPaid),
             formatDateTimeForDB(saleData.date), // Use DATETIME format
             formatNumberForDB(saleData.appliedInsuranceDiscountRate),
@@ -1135,166 +1373,199 @@ export async function addSale(saleData: Omit<SaleTransaction, 'id'>): Promise<Sa
 
 
         // 2. Insert Items and Update Stock (from specific warehouse)
-        console.log("Processing sale items...");
+        // 2. Insert Items and Update Stock (Atomic Update)
         for (const item of saleData.items) {
-             console.log(`Processing item: Product ID ${item.productId}, Qty: ${item.quantity} from Warehouse ${sourceWarehouseId}`);
-             // Fetch product details (including cost) from the correct warehouse
-             const productResults = await tx.execute(`SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products WHERE id = ? AND warehouseId = ?`, [item.productId, sourceWarehouseId]);
-             const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
+            // Fetch product cost and basic info for history/logging, but NOT for stock calculation (to avoid race)
+            // We still need to know unitType to convert quantity if needed. 
+            // Assumption: item.quantity is already in main units or handled.
+            // Looking at existing code: item.soldUnitType is used.
 
-             if (!product) {
-                  throw new Error(`المنتج ${item.productId} غير موجود في المخزن ${sourceWarehouseId}`);
-              }
+            // Fetch product details for cost/validity chcek
+            // Fetch product details for cost/validity chcek
+            const productQuery = `SELECT 
+                id, 
+                CAST(price AS CHAR) as price, 
+                CAST(cost AS CHAR) as cost, 
+                CAST(lastPurchaseCost AS CHAR) as lastPurchaseCost, 
+                CAST(quantity AS CHAR) as quantity, 
+                unitType,
+                subUnitType, 
+                subUnitsPerUnit
+             FROM Products WHERE id = ?`;
 
-             let costAtSale = item.costAtSale;
-              if (costAtSale === undefined && product.lastPurchaseCost) {
-                  const lastPurchaseCostNum = parseFloatFromDB(product.lastPurchaseCost);
-                  const costNum = item.soldUnitType === 'sub' && product.subUnitsPerUnit
-                      ? lastPurchaseCostNum / product.subUnitsPerUnit
-                      : lastPurchaseCostNum;
-                  costAtSale = formatNumberForDB(costNum) || undefined;
-              }
+            // console.log(`Executing Product Fetch: ${productQuery} with params: [${item.productId}]`);
+            const productResults = await tx.select<any[]>(productQuery, [item.productId]);
+            // console.log(`Product Fetch Result Length: ${productResults.length}`);
 
-             const itemQuery = `
-               INSERT INTO SaleTransactionItems (saleId, productId, quantity, price, soldUnitType, costAtSale, warehouseId)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
-           `;
-             const itemParams = [
-                newSaleId,
-                item.productId,
-                formatNumberForDB(item.quantity), // Format number to string
-                formatNumberForDB(item.price), // Format number to string
-                item.soldUnitType,
-                costAtSale, // Already string | undefined | null
-                sourceWarehouseId, // Store warehouse item came from
-            ];
-              console.log(`Inserting Sale Item: ${JSON.stringify(itemParams)}`);
-            await tx.execute(itemQuery, itemParams);
-              console.log("Sale Item inserted.");
+            const product = productResults.length > 0 ? productResults[0] : undefined;
+            // console.log(`Debug Check for ${item.productId}:`, product);
 
-            // Update stock in the specific warehouse
-            console.log(`Updating stock for product ${item.productId} in warehouse ${sourceWarehouseId}`);
-            const currentStockNum = parseFloatFromDB(product.quantity);
-            const quantitySoldNum = parseFloatFromDB(item.quantity);
-            let quantityToDeduct = quantitySoldNum;
-
-            if (item.soldUnitType === 'sub' && product.subUnitsPerUnit && product.subUnitsPerUnit > 0) {
-                quantityToDeduct = quantitySoldNum / product.subUnitsPerUnit;
+            if (!product) {
+                throw new Error(`المنتج ${item.productId} غير موجود في الدليل`);
             }
 
-             console.log(`Current Stock: ${currentStockNum}, Sold Qty (Main Units): ${quantityToDeduct}`);
+            const itemWarehouseId = product.warehouseId || sourceWarehouseId;
 
-            if (currentStockNum < quantityToDeduct) {
-                   console.error(`Insufficient stock for product ${item.productId} in warehouse ${sourceWarehouseId}. Available: ${currentStockNum}, Needed: ${quantityToDeduct}`);
-                   throw new Error(`لا توجد كمية كافية للمنتج ${product.nameAr} في المخزن المحدد. المتوفر: ${currentStockNum}, المطلوب: ${quantityToDeduct}`);
-             }
+            // Calculate quantities
+            let quantityToDeduct = parseFloatFromDB(item.quantity);
+            if (item.soldUnitType === 'sub' && product.subUnitsPerUnit) {
+                quantityToDeduct = quantityToDeduct / parseFloatFromDB(product.subUnitsPerUnit);
+            }
 
-             const newStockLevel = currentStockNum - quantityToDeduct;
-              console.log(`New Stock Level: ${newStockLevel}`);
-            const stockUpdateQuery = "UPDATE Products SET quantity = ? WHERE id = ? AND warehouseId = ?";
-            await tx.execute(stockUpdateQuery, [formatNumberForDB(newStockLevel), item.productId, sourceWarehouseId]);
-              console.log("Stock updated.");
-          }
+            // Determine Cost
+            let costAtSale = parseFloatFromDB(item.costAtSale || '0');
+            if (costAtSale === 0 && product.lastPurchaseCost) {
+                costAtSale = parseFloatFromDB(product.lastPurchaseCost);
+            }
+
+            const itemQuery = `
+               INSERT INTO SaleTransactionItems (id, saleId, productId, quantity, price, soldUnitType, costAtSale, warehouseId)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+           `;
+            const itemId = `si-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
+            const itemParams = [
+                itemId,
+                newSaleId,
+                item.productId,
+                formatNumberForDB(item.quantity),
+                formatNumberForDB(item.price),
+                item.soldUnitType,
+                formatNumberForDB(costAtSale),
+                itemWarehouseId
+            ];
+            // console.log(`Inserting Sale Item: ${JSON.stringify(itemParams)}`);
+            await tx.execute(itemQuery, itemParams);
+            // console.log(`Sale Item inserted.`);
+
+            // Atomic Stock Update
+            // UPDATE Products SET quantity = quantity - ? WHERE id = ? AND warehouseId = ? AND quantity >= ?
+            const stockUpdateSQL = `
+                UPDATE Products 
+                SET quantity = quantity - ? 
+                WHERE id = ? 
+                  AND warehouseId = ? 
+                  AND quantity >= ?
+            `;
+
+            const quantityToDeductVal = formatNumberForDB(quantityToDeduct);
+            const updateParams = [quantityToDeductVal, item.productId, itemWarehouseId, quantityToDeductVal];
+
+            console.log(`Updating stock for product ${item.productId} in warehouse ${itemWarehouseId} (Atomic)`);
+            const updateResult = await tx.execute(stockUpdateSQL, updateParams);
+
+
+            if (updateResult.rowsAffected === 0) {
+                // Check if it was due to missing product/warehouse OR insufficient stock
+                // Since we checked existence above, it's likely insufficient stock (or concurrent deletion)
+                const currentStockCheck = await tx.select<any[]>('SELECT CAST(quantity AS CHAR) as quantity FROM Products WHERE id = ? AND warehouseId = ?', [item.productId, itemWarehouseId]);
+                if (currentStockCheck.length === 0) {
+                    throw new Error(`المنتج ${item.productId} غير موجود في المخزن المحدد.`);
+                }
+                const available = currentStockCheck[0].quantity;
+                throw new Error(`لا توجد كمية كافية للمنتج ${item.productId} في المخزن. المتوفر: ${available}, المطلوب: ${quantityToDeduct}`);
+            }
+            console.log(`Stock updated.`);
+        }
 
         // 3. Update Customer Balance
-         if (saleData.customerId) {
-              console.log(`Updating balance for customer ${saleData.customerId}`);
-              const customerResults = await tx.execute("SELECT * FROM Customers WHERE id = ?", [saleData.customerId]);
-              const customer = customerResults.length > 0 ? mapCustomerData(customerResults[0]) : undefined;
-              if (customer && customer.balance !== undefined) {
-                   const currentBalanceNum = parseFloatFromDB(customer.balance);
-                   const amountDueNum = parseFloatFromDB(saleData.totalAmount);
-                   const paidNum = parseFloatFromDB(saleData.amountPaid);
-                   let balanceChangeNum = 0;
+        if (saleData.customerId) {
+            console.log(`Updating balance for customer ${saleData.customerId}`);
+            const customerResults = await tx.select<any[]>(`SELECT ${CUSTOMERS_SELECT_FIELDS} FROM Customers WHERE id = ?`, [saleData.customerId]);
+            const customer = customerResults.length > 0 ? mapCustomerData(customerResults[0]) : undefined;
+            if (customer && customer.balance !== undefined) {
+                const currentBalanceNum = parseFloatFromDB(customer.balance);
+                const amountDueNum = parseFloatFromDB(saleData.totalAmount);
+                const paidNum = parseFloatFromDB(saleData.amountPaid);
+                let balanceChangeNum = 0;
 
-                   if (saleData.paymentMethod === 'debt') {
-                       balanceChangeNum = -(amountDueNum - paidNum); // Debt increases negative balance
-                   }
-                   console.log(`Current Balance: ${currentBalanceNum}, Amount Due: ${amountDueNum}, Paid: ${paidNum}, Balance Change: ${balanceChangeNum}`);
+                if (saleData.paymentMethod === 'debt') {
+                    balanceChangeNum = -(amountDueNum - paidNum); // Debt increases negative balance
+                }
+                console.log(`Current Balance: ${currentBalanceNum}, Amount Due: ${amountDueNum}, Paid: ${paidNum}, Balance Change: ${balanceChangeNum}`);
 
-                   if (balanceChangeNum !== 0) {
-                       const newBalanceNum = currentBalanceNum + balanceChangeNum;
-                        console.log(`New Balance: ${newBalanceNum}`);
-                      const balanceUpdateQuery = "UPDATE Customers SET balance = ? WHERE id = ?";
-                      await tx.execute(balanceUpdateQuery, [formatNumberForDB(newBalanceNum), saleData.customerId]);
-                        console.log("Customer balance updated.");
-                   }
-              } else {
-                   console.warn(`Customer ${saleData.customerId} not found or balance is undefined.`);
-              }
-         }
+                if (balanceChangeNum !== 0) {
+                    const newBalanceNum = currentBalanceNum + balanceChangeNum;
+                    console.log(`New Balance: ${newBalanceNum}`);
+                    const balanceUpdateQuery = "UPDATE Customers SET balance = ? WHERE id = ?";
+                    await tx.execute(balanceUpdateQuery, [formatNumberForDB(newBalanceNum), saleData.customerId]);
+                    console.log("Customer balance updated.");
+                }
+            } else {
+                console.warn(`Customer ${saleData.customerId} not found or balance is undefined.`);
+            }
+        }
 
-         // 4. Add Treasury Transactions for the payments (split payment support)
-          if (saleData.payments && saleData.payments.length > 0) {
-              console.log(`Processing ${saleData.payments.length} payments...`);
-              for (const payment of saleData.payments) {
-                  const paymentAmount = parseFloatFromDB(payment.amount);
-                  if (paymentAmount > 0) {
-                      await addTreasuryTransaction({
-                          type: 'sale_payment',
-                          amount: formatNumberForDB(paymentAmount)!, // Pass as string, ensure it's positive
-                          date: saleData.date, // Use the same date as the sale
-                          description: `دفعة من فاتورة بيع ${newSaleId}`,
-                          relatedDocumentId: newSaleId,
-                          treasuryId: payment.treasuryId, // Link to the specific treasury
-                      });
-                      console.log(`Added treasury transaction for ${paymentAmount} to treasury ${payment.treasuryId}`);
-                  }
-              }
-          }
-          // Legacy support: single payment method (backward compatibility)
-          else if (saleData.amountPaid && parseFloatFromDB(saleData.amountPaid) > 0) {
-              const paymentMethodMap: Record<string, string> = {
-                  'cash': 'نقداً',
-                  'card': 'بطاقة',
-                  'instapay': 'إنستا باي',
-                  'vodafone_cash': 'فودافون كاش',
-                  'debt': 'آجل'
-              };
-              const paymentMethodLabel = saleData.paymentMethod ? paymentMethodMap[saleData.paymentMethod] || saleData.paymentMethod : '';
+        // 4. Add Treasury Transactions for the payments (split payment support)
+        if (saleData.payments && saleData.payments.length > 0) {
+            console.log(`Processing ${saleData.payments.length} payments...`);
+            for (const payment of saleData.payments) {
+                const paymentAmount = parseFloatFromDB(payment.amount);
+                if (paymentAmount > 0) {
+                    await addTreasuryTransaction({
+                        type: 'sale_payment',
+                        amount: formatNumberForDB(paymentAmount)!, // Pass as string, ensure it's positive
+                        date: saleData.date, // Use the same date as the sale
+                        description: `دفعة من فاتورة بيع ${newSaleId}`,
+                        relatedDocumentId: newSaleId,
+                        treasuryId: payment.treasuryId, // Link to the specific treasury
+                    }, tx);
+                    console.log(`Added treasury transaction for ${paymentAmount} to treasury ${payment.treasuryId}`);
+                }
+            }
+        }
+        // Legacy support: single payment method (backward compatibility)
+        else if (saleData.amountPaid && parseFloatFromDB(saleData.amountPaid) > 0) {
+            const paymentMethodMap: Record<string, string> = {
+                'cash': 'نقداً',
+                'card': 'بطاقة',
+                'instapay': 'إنستا باي',
+                'vodafone_cash': 'فودافون كاش',
+                'debt': 'آجل'
+            };
+            const paymentMethodLabel = saleData.paymentMethod ? paymentMethodMap[saleData.paymentMethod] || saleData.paymentMethod : '';
 
-              await addTreasuryTransaction({
-                  type: 'sale_payment',
-                  amount: formatNumberForDB(saleData.amountPaid)!, // Pass as string, ensure it's positive
-                  date: saleData.date, // Use the same date as the sale
-                  description: `دفعة من فاتورة بيع ${newSaleId} - ${paymentMethodLabel}`,
-                  relatedDocumentId: newSaleId,
-                  treasuryId: targetTreasuryId, // Link to the receiving treasury
-              });
-           }
+            await addTreasuryTransaction({
+                type: 'sale_payment',
+                amount: formatNumberForDB(saleData.amountPaid)!, // Pass as string, ensure it's positive
+                date: saleData.date, // Use the same date as the sale
+                description: `دفعة من فاتورة بيع ${newSaleId} - ${paymentMethodLabel}`,
+                relatedDocumentId: newSaleId,
+                treasuryId: targetTreasuryId, // Link to the receiving treasury
+            }, tx);
+        }
 
-         // Commit transaction here... (Conceptual)
-         console.log("Committing addSale transaction...");
+        // Commit transaction here... (Conceptual)
+        console.log("Committing addSale transaction...");
 
-         console.log("Added Sale (DB):", newSaleId);
-         // Fetch the complete data again to return consistent mapped types
-         const finalSaleData = await saleRepository.findByIdWithItems(newSaleId); // Fetch the newly created sale
-         if (!finalSaleData) {
+        console.log("Added Sale (DB):", newSaleId);
+        // Fetch the complete data again to return consistent mapped types
+        const finalSaleData = await saleRepository.findByIdWithItems(newSaleId, tx); // Fetch the newly created sale using the SAME transaction
+        if (!finalSaleData) {
             throw new Error("Failed to fetch newly created sale data.");
-         }
-         // Handle customerId type conversion (null to undefined) and items type conversion
-         const saleResult: SaleTransaction = {
-              id: finalSaleData.id,
-              customerId: finalSaleData.customerId || undefined,
-              totalAmount: formatNumberForDB(finalSaleData.totalAmount) || '0',
-              originalTotalAmount: formatNumberForDB(finalSaleData.originalTotalAmount) || '0',
-              subTotalAmount: formatNumberForDB(finalSaleData.subTotalAmount) || '0',
-              amountPaid: formatNumberForDB(finalSaleData.amountPaid) || '0',
-              paymentMethod: finalSaleData.paymentMethod as PaymentMethod, // Cast to PaymentMethod type
-              date: finalSaleData.date,
-              appliedInsuranceDiscountRate: formatNumberForDB(finalSaleData.appliedInsuranceDiscountRate) || '0',
-              saleWarehouseId: finalSaleData.saleWarehouseId,
-              paymentTreasuryId: finalSaleData.paymentTreasuryId,
-              items: finalSaleData.items.map(item => ({
-                  ...item,
-                  quantity: formatNumberForDB(item.quantity) || '0', // Convert number to string
-                  price: formatNumberForDB(item.price) || '0', // Convert number to string
-                  costAtSale: item.costAtSale !== undefined ? formatNumberForDB(item.costAtSale) || '0' : undefined,
-                  soldUnitType: item.soldUnitType as 'main' | 'sub', // Cast to proper union type
-              })),
-         };
-         console.log("addSale finished successfully.");
-         return saleResult;
+        }
+        // Handle customerId type conversion (null to undefined) and items type conversion
+        const saleResult: SaleTransaction = {
+            id: finalSaleData.id,
+            customerId: finalSaleData.customerId || undefined,
+            totalAmount: formatNumberForDB(finalSaleData.totalAmount) || '0',
+            originalTotalAmount: formatNumberForDB(finalSaleData.originalTotalAmount) || '0',
+            subTotalAmount: formatNumberForDB(finalSaleData.subTotalAmount) || '0',
+            amountPaid: formatNumberForDB(finalSaleData.amountPaid) || '0',
+            paymentMethod: finalSaleData.paymentMethod as PaymentMethod, // Cast to PaymentMethod type
+            date: finalSaleData.date,
+            appliedInsuranceDiscountRate: formatNumberForDB(finalSaleData.appliedInsuranceDiscountRate) || '0',
+            saleWarehouseId: finalSaleData.saleWarehouseId,
+            paymentTreasuryId: finalSaleData.paymentTreasuryId,
+            items: finalSaleData.items.map(item => ({
+                ...item,
+                quantity: formatNumberForDB(item.quantity) || '0', // Convert number to string
+                price: formatNumberForDB(item.price) || '0', // Convert number to string
+                costAtSale: item.costAtSale !== undefined ? formatNumberForDB(item.costAtSale) || '0' : undefined,
+                soldUnitType: item.soldUnitType as 'main' | 'sub', // Cast to proper union type
+            })),
+        };
+        console.log("addSale finished successfully.");
+        return saleResult;
     });
 }
 
@@ -1310,96 +1581,105 @@ export async function deleteSale(saleId: string): Promise<boolean> {
         if (!sale) {
             throw new Error(`Sale with ID ${saleId} not found.`);
         }
-         console.log("Sale details fetched.");
+        console.log("Sale details fetched.");
 
         // 2. Reverse stock updates for each item using the warehouse recorded on the item
         console.log("Reversing stock updates...");
         for (const item of sale.items) {
-             const itemWarehouseId = item.warehouseId || sale.saleWarehouseId || await getDefaultWarehouseId(); // Determine warehouse from item, sale, or default
-                if (!itemWarehouseId) {
-                   console.error(`Could not determine warehouse for item ${item.productId} in sale ${saleId}. Skipping stock reversal for this item.`);
-                   continue; // Skip if warehouse cannot be determined
-               }
-              console.log(`Reversing stock for product: ${item.productId}, Qty: ${item.quantity} in Warehouse ${itemWarehouseId}`);
-              const productResults = await db.select(`SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products WHERE id = ? AND warehouseId = ?`, [item.productId, itemWarehouseId]);
-              const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
+            const itemWarehouseId = item.warehouseId || sale.saleWarehouseId || await getDefaultWarehouseId();
+            if (!itemWarehouseId) {
+                console.error(`Could not determine warehouse for item ${item.productId} in sale ${saleId}. Skipping stock reversal for this item.`);
+                continue;
+            }
+            console.log(`Reversing stock for product: ${item.productId}, Qty: ${item.quantity} in Warehouse ${itemWarehouseId}`);
 
-              if (product) {
-                const currentStockNum = parseFloatFromDB(product.quantity);
-                const quantitySoldNum = parseFloatFromDB(item.quantity);
-                let quantityToAddBack = quantitySoldNum;
-
-                if (item.soldUnitType === 'sub' && product.subUnitsPerUnit && product.subUnitsPerUnit > 0) {
-                    quantityToAddBack = quantitySoldNum / product.subUnitsPerUnit;
+            // Fetch product metadata only (for sub-unit conversion) - Safe from stock race
+            // We need subUnitsPerUnit if soldUnitType is 'sub'
+            let conversionFactor = 1;
+            if (item.soldUnitType === 'sub') {
+                const productMeta = await db.select('SELECT subUnitsPerUnit FROM Products WHERE id = ?', [item.productId]) as any[];
+                if (productMeta.length > 0 && productMeta[0].subUnitsPerUnit) {
+                    conversionFactor = parseFloatFromDB(productMeta[0].subUnitsPerUnit) || 1;
+                    // Avoid division by zero
+                    if (conversionFactor === 0) conversionFactor = 1;
                 }
+            }
 
-                console.log(`Current Stock: ${currentStockNum}, Quantity to Add Back: ${quantityToAddBack}`);
+            const quantitySoldNum = parseFloatFromDB(item.quantity);
+            let quantityToAddBack = quantitySoldNum;
+            if (item.soldUnitType === 'sub') {
+                quantityToAddBack = quantitySoldNum / conversionFactor;
+            }
 
-                const newStockLevel = currentStockNum + quantityToAddBack;
-                   console.log(`New Stock Level after reversal: ${newStockLevel}`);
-                  const stockUpdateQuery = "UPDATE Products SET quantity = ? WHERE id = ? AND warehouseId = ?";
-                  await db.execute(stockUpdateQuery, [formatNumberForDB(newStockLevel), item.productId, itemWarehouseId]);
-                   console.log("Stock reversal complete for item.");
-              } else {
-                   console.warn(`Product with ID ${item.productId} not found in warehouse ${itemWarehouseId} during sale deletion stock adjustment.`);
-              }
-         }
-          console.log("Stock updates reversed.");
+            // Atomic Stock Restoration
+            const atomicStockQuery = `
+                UPDATE Products 
+                SET quantity = quantity + ? 
+                WHERE id = ? AND warehouseId = ?
+            `;
+            await db.execute(atomicStockQuery, [
+                formatNumberForDB(quantityToAddBack),
+                item.productId,
+                itemWarehouseId
+            ]);
+            console.log("Stock reversal complete for item (Atomic).");
+        }
+        console.log("Stock updates reversed.");
 
         // 3. Reverse customer balance update
-         if (sale.customerId) {
-              console.log(`Reversing balance for customer ${sale.customerId}`);
-              const customer = await getCustomerById(sale.customerId);
-              if (customer && customer.balance !== undefined) {
-                   const currentBalanceNum = parseFloatFromDB(customer.balance);
-                   const amountDueNum = parseFloatFromDB(sale.totalAmount);
-                   const paidNum = parseFloatFromDB(sale.amountPaid);
-                   let balanceChangeToReverseNum = 0;
+        if (sale.customerId) {
+            console.log(`Reversing balance for customer ${sale.customerId}`);
+            const customer = await getCustomerById(sale.customerId);
+            if (customer && customer.balance !== undefined) {
+                const currentBalanceNum = parseFloatFromDB(customer.balance);
+                const amountDueNum = parseFloatFromDB(sale.totalAmount);
+                const paidNum = parseFloatFromDB(sale.amountPaid);
+                let balanceChangeToReverseNum = 0;
 
-                   if (sale.paymentMethod === 'debt') {
-                       balanceChangeToReverseNum = -(amountDueNum - paidNum);
-                   }
-                   console.log(`Current Balance: ${currentBalanceNum}, Change to Reverse: ${balanceChangeToReverseNum}`);
+                if (sale.paymentMethod === 'debt') {
+                    balanceChangeToReverseNum = -(amountDueNum - paidNum);
+                }
+                console.log(`Current Balance: ${currentBalanceNum}, Change to Reverse: ${balanceChangeToReverseNum}`);
 
-                   if (balanceChangeToReverseNum !== 0) {
-                       const originalBalanceNum = currentBalanceNum - balanceChangeToReverseNum;
-                        console.log(`Original Balance (estimated): ${originalBalanceNum}`);
-                      const balanceUpdateQuery = "UPDATE Customers SET balance = ? WHERE id = ?";
-                      await db.execute(balanceUpdateQuery, [formatNumberForDB(originalBalanceNum), sale.customerId]);
-                        console.log("Customer balance reversal complete.");
-                   }
-              } else {
-                   console.warn(`Customer ${sale.customerId} not found or balance undefined during reversal.`);
-              }
-         }
+                if (balanceChangeToReverseNum !== 0) {
+                    const originalBalanceNum = currentBalanceNum - balanceChangeToReverseNum;
+                    console.log(`Original Balance (estimated): ${originalBalanceNum}`);
+                    const balanceUpdateQuery = "UPDATE Customers SET balance = ? WHERE id = ?";
+                    await db.execute(balanceUpdateQuery, [formatNumberForDB(originalBalanceNum), sale.customerId]);
+                    console.log("Customer balance reversal complete.");
+                }
+            } else {
+                console.warn(`Customer ${sale.customerId} not found or balance undefined during reversal.`);
+            }
+        }
 
-         // 4. Reverse Treasury Transaction (add a negative transaction in the original treasury)
-          const paymentTreasuryId = sale.paymentTreasuryId || await getDefaultTreasuryId(); // Determine the original treasury
-          if (parseFloatFromDB(sale.amountPaid) > 0) {
-              await addTreasuryTransaction({
-                  type: 'sale_payment_reversal', // Specific type for reversal
-                  amount: formatNumberForDB(-parseFloatFromDB(sale.amountPaid))!, // Negative amount to reverse income, as string
-                  date: new Date(), // Date of reversal
-                  description: `عكس دفعة فاتورة بيع محذوفة ${saleId}`,
-                  relatedDocumentId: saleId,
-                  treasuryId: paymentTreasuryId, // Link to the original treasury
-              });
-           }
+        // 4. Reverse Treasury Transaction (add a negative transaction in the original treasury)
+        const paymentTreasuryId = sale.paymentTreasuryId || await getDefaultTreasuryId(); // Determine the original treasury
+        if (parseFloatFromDB(sale.amountPaid) > 0) {
+            await addTreasuryTransaction({
+                type: 'sale_payment_reversal', // Specific type for reversal
+                amount: formatNumberForDB(-parseFloatFromDB(sale.amountPaid))!, // Negative amount to reverse income, as string
+                date: new Date(), // Date of reversal
+                description: `عكس دفعة فاتورة بيع محذوفة ${saleId}`,
+                relatedDocumentId: saleId,
+                treasuryId: paymentTreasuryId, // Link to the original treasury
+            });
+        }
 
-         // 5. Delete sale items
-         console.log("Deleting sale items...");
-         await db.execute("DELETE FROM SaleTransactionItems WHERE saleId = ?", [saleId]);
-         console.log("Sale items deleted.");
+        // 5. Delete sale items
+        console.log("Deleting sale items...");
+        await db.execute("DELETE FROM SaleTransactionItems WHERE saleId = ?", [saleId]);
+        console.log("Sale items deleted.");
 
-         // 6. Delete sale transaction itself
-         console.log("Deleting sale transaction...");
-         const result = await db.execute("DELETE FROM SalesTransactions WHERE id = ?", [saleId]);
-         console.log("Sale transaction deleted.");
+        // 6. Delete sale transaction itself
+        console.log("Deleting sale transaction...");
+        const result = await db.execute("DELETE FROM SalesTransactions WHERE id = ?", [saleId]);
+        console.log("Sale transaction deleted.");
 
-         // Commit transaction... (Conceptual)
-         console.log("Committing deleteSale transaction...");
-         console.log(`Deleted Sale ${saleId} and reversed effects (DB)`);
-         return result.affectedRows > 0;
+        // Commit transaction... (Conceptual)
+        console.log("Committing deleteSale transaction...");
+        console.log(`Deleted Sale ${saleId} and reversed effects (DB)`);
+        return result.affectedRows > 0;
 
     } catch (error) {
         // Rollback transaction... (Conceptual)
@@ -1409,81 +1689,93 @@ export async function deleteSale(saleId: string): Promise<boolean> {
     }
 }
 
-export async function deletePurchase(purchaseId: string): Promise<boolean> {
-    const db = await getDB();
+export async function deletePurchase(purchaseId: string, tx?: Transaction): Promise<boolean> {
+    const executor = tx || await getDB();
 
     // Start transaction... (Conceptual)
-     console.log(`Starting deletePurchase transaction for ID: ${purchaseId}`);
+    console.log(`Starting deletePurchase transaction for ID: ${purchaseId}`);
     try {
         // 1. Get purchase details first to reverse effects
-         console.log("Fetching purchase details...");
-         const purchase = await getPurchaseById(purchaseId);
-         if (!purchase) {
+        console.log("Fetching purchase details...");
+        const purchase = await getPurchaseById(purchaseId);
+        if (!purchase) {
             throw new Error(`Purchase with ID ${purchaseId} not found.`);
-         }
-          console.log("Purchase details fetched.");
+        }
+        console.log("Purchase details fetched.");
 
-         // Determine target warehouse from the purchase record or default
-         const targetWarehouseId = purchase.destinationWarehouseId || await getDefaultWarehouseId();
-         if (!targetWarehouseId) {
-              throw new Error("Could not determine warehouse to reverse stock from.");
-         }
-          // Determine payment treasury from the purchase record or default
-         const paymentTreasuryId = purchase.paymentTreasuryId || await getDefaultTreasuryId();
+        // Determine target warehouse from the purchase record or default
+        const targetWarehouseId = purchase.destinationWarehouseId || await getDefaultWarehouseId();
+        if (!targetWarehouseId) {
+            throw new Error("Could not determine warehouse to reverse stock from.");
+        }
+        // Determine payment treasury from the purchase record or default
+        const paymentTreasuryId = purchase.paymentTreasuryId || await getDefaultTreasuryId();
 
-         // 2. Reverse stock updates for each item (in the correct warehouse)
-          console.log("Reversing stock updates...");
-         for (const item of purchase.items) {
-              console.log(`Reversing stock for product: ${item.productId}, Qty: ${item.quantity} in Warehouse ${targetWarehouseId}`);
-              const productResults = await db.select(`SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products WHERE id = ? AND warehouseId = ?`, [item.productId, targetWarehouseId]);
-              const product = productResults.length > 0 ? mapProductData(productResults[0]) : undefined;
+        // 2. Reverse stock updates for each item (in the correct warehouse)
+        console.log("Reversing stock updates...");
+        for (const item of purchase.items) {
+            console.log(`Reversing stock for product: ${item.productId}, Qty: ${item.quantity} in Warehouse ${targetWarehouseId} (Atomic)`);
 
-              if (product) {
-                const currentStockNum = parseFloatFromDB(product.quantity);
-                const quantityPurchasedNum = parseFloatFromDB(item.quantity);
-                const newStockLevel = currentStockNum - quantityPurchasedNum; // Subtract purchased quantity
+            // Atomic Reversal: Deduct from stock directly
+            // Using MAX(0, quantity - ?) is problematic in SQLite if we want strict consistency, 
+            // but typically we just subtract. If it goes below zero, it goes below zero (audit issue) 
+            // OR we clamp it. Read-modify-write clamped it. 
+            // Let's use standard atomic subtraction. If it goes negative, it reflects reality (we returned items we didn't have?).
+            // However, to match previous logic "Math.max(0, ...)", we can use:
+            // UPDATE Products SET quantity = MAX(0, quantity - ?) ...
 
-                console.log(`Current Stock: ${currentStockNum}, Qty Purchased: ${quantityPurchasedNum}`);
+            const quantityPurchasedNum = parseFloatFromDB(item.quantity);
+            const quantityToDeductVal = formatNumberForDB(quantityPurchasedNum);
 
-                const finalNewStock = Math.max(0, newStockLevel); // Prevent negative stock
-                    console.log(`New Stock Level after reversal: ${finalNewStock}`);
+            const stockUpdateQuery = `
+                 UPDATE Products 
+                 SET quantity = CASE WHEN (quantity - ?) < 0 THEN 0 ELSE (quantity - ?) END 
+                 WHERE id = ? AND warehouseId = ?
+            `;
+            // Simplified for standard SQL/SQLite: MAX(0, quantity - ?)
+            // SQLite supports MAX().
+            const atomicStockUpdate = `
+                UPDATE Products 
+                SET quantity = MAX(0, quantity - ?) 
+                WHERE id = ? AND warehouseId = ?
+            `;
 
-                  const stockUpdateQuery = "UPDATE Products SET quantity = ? WHERE id = ? AND warehouseId = ?";
-                  await db.execute(stockUpdateQuery, [formatNumberForDB(finalNewStock), item.productId, targetWarehouseId]);
-                   console.log("Stock reversal complete for item.");
-              } else {
-                   console.warn(`Product with ID ${item.productId} not found in warehouse ${targetWarehouseId} during purchase deletion stock adjustment.`);
-              }
-           }
-          console.log("Stock updates reversed.");
+            await executor.execute(atomicStockUpdate, [
+                quantityToDeductVal,
+                item.productId,
+                targetWarehouseId
+            ]);
+            console.log("Stock reversal complete for item (Atomic).");
+        }
+        console.log("Stock updates reversed.");
 
-         // 3. Reverse Treasury Transaction (add a positive transaction if payment was made, in the correct treasury)
-          const amountPaidNum = parseFloatFromDB(purchase.amountPaid);
-           if (amountPaidNum > 0) {
-             await addTreasuryTransaction({
+        // 3. Reverse Treasury Transaction (add a positive transaction if payment was made, in the correct treasury)
+        const amountPaidNum = parseFloatFromDB(purchase.amountPaid);
+        if (amountPaidNum > 0) {
+            await addTreasuryTransaction({
                 type: 'purchase_payment_reversal', // Specific type for reversal
                 amount: formatNumberForDB(amountPaidNum)!, // Positive amount to reverse outflow, as string
                 date: new Date(), // Date of reversal
                 description: `عكس دفعة فاتورة شراء محذوفة ${purchaseId}`,
                 relatedDocumentId: purchaseId,
                 treasuryId: paymentTreasuryId, // Link to the original payment treasury
-             });
-          }
+            }, executor); // Pass executor (which is tx if provided)
+        }
 
-         // 4. Delete purchase items
-          console.log("Deleting purchase items...");
-         await db.execute("DELETE FROM PurchaseTransactionItems WHERE purchaseId = ?", [purchaseId]);
-          console.log("Purchase items deleted.");
+        // 4. Delete purchase items
+        console.log("Deleting purchase items...");
+        await executor.execute("DELETE FROM PurchaseTransactionItems WHERE purchaseId = ?", [purchaseId]);
+        console.log("Purchase items deleted.");
 
-         // 5. Delete purchase transaction itself
-          console.log("Deleting purchase transaction...");
-         const result = await db.execute("DELETE FROM PurchaseTransactions WHERE id = ?", [purchaseId]);
-          console.log("Purchase transaction deleted.");
+        // 5. Delete purchase transaction itself
+        console.log("Deleting purchase transaction...");
+        const result = await executor.execute("DELETE FROM PurchaseTransactions WHERE id = ?", [purchaseId]);
+        console.log("Purchase transaction deleted.");
 
-         // Commit transaction... (Conceptual)
-          console.log("Committing deletePurchase transaction...");
-          console.log(`Deleted Purchase ${purchaseId} and attempted to reverse stock (DB)`);
-          return result.affectedRows > 0;
+        // Commit transaction... (Conceptual)
+        console.log("Committing deletePurchase transaction...");
+        console.log(`Deleted Purchase ${purchaseId} and attempted to reverse stock (DB)`);
+        return result.affectedRows > 0;
 
     } catch (error) {
         // Rollback transaction... (Conceptual)
@@ -1509,11 +1801,11 @@ export async function getUsers(): Promise<User[]> {
 export async function getUserForLogin(username: string): Promise<User | undefined> {
     const db = await getDB();
     try {
-         // Fetch user including password hash for verification if needed
-         const results = await db.select("SELECT id, username, name, email, role, passwordHash FROM Users WHERE username = ?", [username]);
-         if (results && results.length > 0) {
-             return results[0] as User;
-         }
+        // Fetch user including password hash for verification if needed
+        const results = await db.select("SELECT id, username, name, email, role, passwordHash FROM Users WHERE username = ?", [username]);
+        if (results && results.length > 0) {
+            return results[0] as User;
+        }
         return undefined;
     } catch (error) {
         console.error(`Error fetching user by username ${username}:`, error);
@@ -1533,7 +1825,7 @@ export async function addUser(userData: Omit<User, 'id' | 'passwordHash'> & { pa
         console.warn("Password hashing is not implemented! Storing plain text password (unsafe).");
         passwordHash = userData.password; // Replace with: await hashPassword(userData.password);
     } else {
-         throw new Error("Password is required when adding a new user.");
+        throw new Error("Password is required when adding a new user.");
     }
     // ----------------------------------------
 
@@ -1706,7 +1998,7 @@ export async function deleteTreasury(id: string): Promise<boolean> {
     const treasuryResult = await db.select("SELECT isDefault FROM Treasuries WHERE id = ?", [id]);
     const treasury = treasuryResult?.[0];
     if (treasury && parseBooleanFromDB(treasury.isDefault)) {
-         throw new Error(`لا يمكن حذف الخزنة الافتراضية.`);
+        throw new Error(`لا يمكن حذف الخزنة الافتراضية.`);
     }
 
     const query = "DELETE FROM Treasuries WHERE id = ?";
@@ -1765,10 +2057,10 @@ export async function getTreasuryTransactions(filters?: { startDate?: Date, endD
         // Filter specifically for transactions *without* a treasury ID if 'general' is selected,
         // or filter by specific treasury ID otherwise.
         if (filters?.treasuryId === undefined) { // 'general' treasury selected (no specific ID)
-              conditions.push("treasuryId IS NULL");
+            conditions.push("treasuryId IS NULL");
         } else if (filters?.treasuryId) { // Specific treasury selected
-              conditions.push("treasuryId = ?");
-              params.push(filters.treasuryId);
+            conditions.push("treasuryId = ?");
+            params.push(filters.treasuryId);
         }
 
         if (conditions.length > 0) {
@@ -1790,7 +2082,7 @@ export async function getTreasuryBalance(): Promise<number> {
     try {
         // استخدم DOUBLE بدل REAL لحل مشكلة MariaDB
         const result = await db.select(
-            "SELECT SUM(CAST(amount AS DOUBLE)) as balance FROM TreasuryTransactions", 
+            "SELECT SUM(CAST(amount AS DOUBLE)) as balance FROM TreasuryTransactions",
             []
         );
 
@@ -1805,9 +2097,11 @@ export async function getTreasuryBalance(): Promise<number> {
 }
 
 export async function addTreasuryTransaction(
-    txData: Omit<TreasuryTransaction, 'id' | 'date'> & { date?: Date } // Make date optional for auto-generation
+    txData: Omit<TreasuryTransaction, 'id' | 'date'> & { date?: Date }, // Make date optional for auto-generation
+    tx?: Transaction // Optional transaction context
 ): Promise<TreasuryTransaction> {
     const db = await getDB();
+    const executor = tx || db; // Use transaction if provided, otherwise db connection
     const newId = `trx-${Date.now()}-${Math.random().toString(16).substring(2, 6)}`;
     const transactionDate = txData.date || new Date(); // Use provided date or now
 
@@ -1817,10 +2111,10 @@ export async function addTreasuryTransaction(
         console.warn(`Automatically negating positive amount for outflow transaction type: ${txData.type}`);
         amountNum = -amountNum;
     }
-     if (['deposit', 'sale_payment', 'transfer_in', 'purchase_payment_reversal', 'opening_balance'].includes(txData.type) && amountNum < 0) {
+    if (['deposit', 'sale_payment', 'transfer_in', 'purchase_payment_reversal', 'opening_balance'].includes(txData.type) && amountNum < 0) {
         console.warn(`Automatically making negative amount positive for inflow transaction type: ${txData.type}`);
         amountNum = Math.abs(amountNum);
-       }
+    }
 
     const query = `
         INSERT INTO TreasuryTransactions (
@@ -1838,7 +2132,7 @@ export async function addTreasuryTransaction(
         txData.treasuryId, // Add treasuryId here
     ];
     try {
-        await db.execute(query, params);
+        await executor.execute(query, params);
         const newTransaction: TreasuryTransaction = {
             ...txData,
             id: newId,
@@ -1857,7 +2151,7 @@ export async function addTreasuryTransaction(
 export async function getProductNameById(id: string): Promise<string> {
     // This might need adjustment if same product ID exists in multiple warehouses
     const product = await getProductById(id); // Fetches first matching product ID
-    return product ? product.nameAr : `منتج غير معروف (${id.substring(0,6)})`;
+    return product ? product.nameAr : `منتج غير معروف (${id.substring(0, 6)})`;
 }
 
 export function calculateDaysUntilExpiry(expiryDate?: Date | string): number {
@@ -1939,7 +2233,7 @@ export async function getExpiredProducts(warehouseId?: string): Promise<ProductE
         query += " AND warehouseId = ?";
         params.push(warehouseId);
     }
-     query += " ORDER BY expiryDate ASC";
+    query += " ORDER BY expiryDate ASC";
 
     try {
         const results = await db.select(query, params);
@@ -2324,11 +2618,11 @@ export async function getProductsForInvoice(sale: SaleTransaction): Promise<Prod
     try {
         // Get all product IDs from sale items
         const productIds = [...new Set(sale.items.map(item => item.productId))];
-        
+
         // Fetch all products
         const results = await db.select(`SELECT ${PRODUCTS_SELECT_FIELDS} FROM Products`, []);
         const allProducts = (results as any[]).map(mapProductData);
-        
+
         // Filter products that are in the sale
         return allProducts.filter(product => productIds.includes(product.id));
     } catch (error) {

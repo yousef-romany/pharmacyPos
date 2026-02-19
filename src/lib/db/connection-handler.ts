@@ -1,8 +1,13 @@
 import db from '../db';
 
+// Define a proper type for database query results
+interface DatabaseRow {
+  [key: string]: any;
+}
+
 /**
  * Database connection error types
- * 
+ *
  * These errors represent various failure modes when connecting
  * to or interacting with the database.
  */
@@ -117,11 +122,11 @@ export async function executeQuery(sql: string, params: any[] = []): Promise<any
  * @returns Query result array
  * @throws QueryExecutionError if query fails
  */
-export async function executeSelect(sql: string, params: any[] = []): Promise<any[]> {
+export async function executeSelect(sql: string, params: any[] = []): Promise<DatabaseRow[]> {
     try {
         ensureDatabaseAvailable();
         const result = await (await db).select(sql, params);
-        return result as any[];
+        return result as DatabaseRow[];
     } catch (error) {
         if (error instanceof Error) {
             throw new QueryExecutionError(
