@@ -19,18 +19,17 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "1.8.0", features = ["dialog-all", "custom-protocol"] }
 chrono = "0.4"
+
+[patch.crates-io]
 # Pin dependencies to avoid edition2024 requirement (not available in Rust 1.75.0)
-home = "0.5.5"
-getrandom = "0.2"
-windows-sys = "0.52"
-windows-registry = "0.2"
-time = "0.3.23"
-rustls = "0.21"
-rustls-webpki = "0.101"
-webpki-roots = "0.25"
-schannel = "0.1"
-winapi = "0.3"
-windows = "0.51"
+home = { git = "https://github.com/rentpath/home", tag = "v0.5.5" }
+getrandom = { git = "https://github.com/rust-random/getrandom", tag = "v0.2.15" }
+time = { git = "https://github.com/time-rs/time", tag = "0.3.23" }
+windows-sys = { git = "https://github.com/microsoft/windows-rs", tag = "0.52.0" }
+windows-registry = { git = "https://github.com/microsoft/windows-rs", tag = "0.52.0" }
+rustls = { git = "https://github.com/rustls/rustls", tag = "v/0.21.12" }
+rustls-webpki = { git = "https://github.com/rustls/webpki", tag = "v0.101.7" }
+webpki-roots = { git = "https://github.com/rustls/webpki-roots", tag = "v0.25.4" }
 
 [dependencies.tauri-plugin-sql]
 git = "https://github.com/tauri-apps/plugins-workspace"
