@@ -1367,7 +1367,7 @@ dependencies = [
 name = "home"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "083fcacf2c68cd0115d2021f306b75129c14c25ec0b4ed04888bda4c25e4d7c9"
+checksum = "5444c27eef6923071f7ebcc33e3444508466a76f7a2b93da00ed6e19f30c1ddb"
 dependencies = [
  "windows-sys 0.48.0",
 ]
