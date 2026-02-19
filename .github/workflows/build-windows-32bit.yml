@@ -26,7 +26,7 @@ jobs:
         run: bun install
 
       - name: Build for Windows 32-bit
-        run: bun tauri build --target i686-pc-windows-msvc
+        run: bun tauri build --target i686-pc-windows-msvc -- --locked
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
