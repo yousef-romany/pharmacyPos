@@ -14,7 +14,8 @@
     "allowlist": {
       "dialog": {
         "all": true
-      }
+      },
+      "all": false
     },
     "bundle": {
       "active": true,

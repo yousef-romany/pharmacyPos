@@ -26,9 +26,9 @@ import { Checkbox } from '@/components/ui/checkbox'; // Import Checkbox
 
 // Helper function to safely parse floats (can be moved to utils)
 const safeParseFloat = (value: string | number | null | undefined, defaultValue = 0): number => {
-    if (value === null || value === undefined) return defaultValue;
-    const parsed = parseFloat(value.toString());
-    return isNaN(parsed) ? defaultValue : parsed;
+  if (value === null || value === undefined) return defaultValue;
+  const parsed = parseFloat(value.toString());
+  return isNaN(parsed) ? defaultValue : parsed;
 };
 
 export default function InventoryReportPage() {
@@ -46,7 +46,7 @@ export default function InventoryReportPage() {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-         const inventoryData = await getInventoryReportData();
+        const inventoryData = await getInventoryReportData();
         setInventory(inventoryData);
         setFilteredInventory(inventoryData); // Initially show all
       } catch (error) {
@@ -65,29 +65,29 @@ export default function InventoryReportPage() {
 
     // Filter by Search Term
     if (searchTerm.trim()) {
-        const lowerSearchTerm = searchTerm.toLowerCase();
-        results = results.filter(item =>
-          item.nameAr.toLowerCase().includes(lowerSearchTerm) ||
-          (item.nameEn && item.nameEn.toLowerCase().includes(lowerSearchTerm)) || // Check if nameEn exists
-          (item.barcode && item.barcode.toLowerCase().includes(lowerSearchTerm)) ||
-          item.id.toLowerCase().includes(lowerSearchTerm)
-        );
+      const lowerSearchTerm = searchTerm.toLowerCase();
+      results = results.filter(item =>
+        item.nameAr.toLowerCase().includes(lowerSearchTerm) ||
+        (item.nameEn && item.nameEn.toLowerCase().includes(lowerSearchTerm)) || // Check if nameEn exists
+        (item.barcode && item.barcode.toLowerCase().includes(lowerSearchTerm)) ||
+        item.id.toLowerCase().includes(lowerSearchTerm)
+      );
     }
 
     // Filter by Expired
     if (showExpired) {
-        results = results.filter(item => {
-            const daysLeft = item.expiryDate ? calculateDaysUntilExpiry(new Date(item.expiryDate)) : null;
-            return daysLeft !== null && daysLeft < 0;
-        });
+      results = results.filter(item => {
+        const daysLeft = item.expiryDate ? calculateDaysUntilExpiry(new Date(item.expiryDate)) : null;
+        return daysLeft !== null && daysLeft < 0;
+      });
     }
 
     // Filter by Nearing Expiry (and not already expired)
     if (showNearingExpiry) {
-         results = results.filter(item => {
-             const daysLeft = item.expiryDate ? calculateDaysUntilExpiry(new Date(item.expiryDate)) : null;
-             return daysLeft !== null && daysLeft >= 0 && daysLeft <= 60;
-         });
+      results = results.filter(item => {
+        const daysLeft = item.expiryDate ? calculateDaysUntilExpiry(new Date(item.expiryDate)) : null;
+        return daysLeft !== null && daysLeft >= 0 && daysLeft <= 60;
+      });
     }
 
     // Filter by Low Stock (TODO: Needs Product.minStockLevel to be reliable)
@@ -102,12 +102,12 @@ export default function InventoryReportPage() {
   const totalInventoryValue = filteredInventory.reduce((sum, item) => sum + item.inventoryValue, 0);
   const totalFilteredItemCount = filteredInventory.length;
 
-    const resetFilters = () => {
-        setSearchTerm('');
-        setShowExpired(false);
-        setShowNearingExpiry(false);
-        setShowLowStock(false);
-    };
+  const resetFilters = () => {
+    setSearchTerm('');
+    setShowExpired(false);
+    setShowNearingExpiry(false);
+    setShowLowStock(false);
+  };
 
 
   return (
@@ -117,62 +117,62 @@ export default function InventoryReportPage() {
           <Archive className="w-6 h-6" />
           تقرير المخزون
         </h2>
-         <div className="flex items-center gap-2">
-            {/* Filter Popover */}
-             <Popover>
-                <PopoverTrigger asChild>
-                     <Button variant="outline">
-                        <Filter className="ml-2 h-4 w-4" />
-                         تصفية
-                     </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80">
-                     <div className="grid gap-4">
-                         <div className="space-y-2">
-                             <h4 className="font-medium leading-none">فلاتر التقرير</h4>
-                             <p className="text-sm text-muted-foreground">
-                                 حدد معايير تصفية لعرض المخزون.
-                             </p>
-                         </div>
-                         <div className="grid gap-2">
-                             <div className="grid grid-cols-3 items-center gap-4">
-                                 <Label htmlFor="searchTerm" className="col-span-1">بحث</Label>
-                                 <Input
-                                    id="searchTerm"
-                                    placeholder="اسم, كود, باركود..."
-                                    className="h-8 col-span-2"
-                                    value={searchTerm}
-                                    onChange={e => setSearchTerm(e.target.value)}
-                                  />
-                             </div>
-                             <div className="flex items-center space-x-2">
-                                <Checkbox id="showExpired" checked={showExpired} onCheckedChange={(checked) => setShowExpired(Boolean(checked))} />
-                                <Label htmlFor="showExpired" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                     عرض المنتهي الصلاحية فقط
-                                </Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <Checkbox id="showNearingExpiry" checked={showNearingExpiry} onCheckedChange={(checked) => setShowNearingExpiry(Boolean(checked))} />
-                                <Label htmlFor="showNearingExpiry" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                                     عرض ما قارب على الانتهاء (60 يوم)
-                                </Label>
-                            </div>
-                            {/* Add Low Stock Checkbox later if minStockLevel is consistently available */}
-                            {/* <div className="flex items-center space-x-2">
+        <div className="flex items-center gap-2">
+          {/* Filter Popover */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline">
+                <Filter className="ml-2 h-4 w-4" />
+                تصفية
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80">
+              <div className="grid gap-4">
+                <div className="space-y-2">
+                  <h4 className="font-medium leading-none">فلاتر التقرير</h4>
+                  <p className="text-sm text-muted-foreground">
+                    حدد معايير تصفية لعرض المخزون.
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <div className="grid grid-cols-3 items-center gap-4">
+                    <Label htmlFor="searchTerm" className="col-span-1">بحث</Label>
+                    <Input
+                      id="searchTerm"
+                      placeholder="اسم, كود, باركود..."
+                      className="h-8 col-span-2"
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox id="showExpired" checked={showExpired} onCheckedChange={(checked) => setShowExpired(Boolean(checked))} />
+                    <Label htmlFor="showExpired" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      عرض المنتهي الصلاحية فقط
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Checkbox id="showNearingExpiry" checked={showNearingExpiry} onCheckedChange={(checked) => setShowNearingExpiry(Boolean(checked))} />
+                    <Label htmlFor="showNearingExpiry" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      عرض ما قارب على الانتهاء (60 يوم)
+                    </Label>
+                  </div>
+                  {/* Add Low Stock Checkbox later if minStockLevel is consistently available */}
+                  {/* <div className="flex items-center space-x-2">
                                 <Checkbox id="showLowStock" checked={showLowStock} onCheckedChange={(checked) => setShowLowStock(Boolean(checked))} />
                                 <Label htmlFor="showLowStock" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
                                     عرض الأصناف تحت الحد الأدنى
                                 </Label>
                             </div> */}
-                         </div>
-                          <Button variant="outline" size="sm" onClick={resetFilters}>إعادة تعيين الفلاتر</Button>
-                     </div>
-                </PopoverContent>
-             </Popover>
-             <Button variant="outline" onClick={() => window.print()}> {/* Basic print */}
-                <Printer className="ml-2 h-4 w-4" />
-                 طباعة التقرير
-            </Button>
+                </div>
+                <Button variant="outline" size="sm" onClick={resetFilters}>إعادة تعيين الفلاتر</Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+          <Button variant="outline" onClick={() => window.print()}> {/* Basic print */}
+            <Printer className="ml-2 h-4 w-4" />
+            طباعة التقرير
+          </Button>
         </div>
       </div>
 
@@ -184,10 +184,10 @@ export default function InventoryReportPage() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-             <div className="flex justify-around">
-                 <Skeleton className="h-8 w-24" />
-                 <Skeleton className="h-8 w-32" />
-             </div>
+            <div className="flex justify-around">
+              <Skeleton className="h-8 w-24" />
+              <Skeleton className="h-8 w-32" />
+            </div>
           ) : (
             <div className="grid grid-cols-2 gap-4 text-center">
               <div>
@@ -196,7 +196,7 @@ export default function InventoryReportPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">إجمالي قيمة المخزون</p>
-                <p className="text-2xl font-bold">{totalInventoryValue.toFixed(2)} ر.س</p>
+                <p className="text-2xl font-bold">{totalInventoryValue.toFixed(2)} ج.م</p>
               </div>
             </div>
           )}
@@ -218,10 +218,10 @@ export default function InventoryReportPage() {
                   <TableHead>الباركود</TableHead>
                   <TableHead>الكمية</TableHead>
                   <TableHead>الوحدة</TableHead>
-                   <TableHead>آخر تكلفة</TableHead>
+                  <TableHead>آخر تكلفة</TableHead>
                   <TableHead>سعر البيع</TableHead>
                   <TableHead>الصلاحية</TableHead>
-                   <TableHead>قيمة المخزون</TableHead>
+                  <TableHead>قيمة المخزون</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -234,39 +234,39 @@ export default function InventoryReportPage() {
                       <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                     </TableRow>
                   ))
                 ) : filteredInventory.length > 0 ? (
                   filteredInventory.map((item) => {
-                     const daysLeft = item.expiryDate ? calculateDaysUntilExpiry(new Date(item.expiryDate)) : null;
-                     const isExpired = daysLeft !== null && daysLeft < 0;
-                     const isExpiringSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 60;
-                     const expiryColorClass = isExpired ? 'text-red-700 font-bold' : isExpiringSoon ? 'text-orange-600 font-medium' : '';
-                     const quantityNum = safeParseFloat(item.quantity);
-                     const priceNum = safeParseFloat(item.price);
-                     const costNum = safeParseFloat(item.lastPurchaseCost, 0);
+                    const daysLeft = item.expiryDate ? calculateDaysUntilExpiry(new Date(item.expiryDate)) : null;
+                    const isExpired = daysLeft !== null && daysLeft < 0;
+                    const isExpiringSoon = daysLeft !== null && daysLeft >= 0 && daysLeft <= 60;
+                    const expiryColorClass = isExpired ? 'text-red-700 font-bold' : isExpiringSoon ? 'text-orange-600 font-medium' : '';
+                    const quantityNum = safeParseFloat(item.quantity);
+                    const priceNum = safeParseFloat(item.price);
+                    const costNum = safeParseFloat(item.lastPurchaseCost, 0);
 
-                     return (
-                         <TableRow key={item.id}>
-                             <TableCell className="font-medium">
-                                <div>{item.nameAr}</div>
-                                <div className="text-xs text-muted-foreground">{item.nameEn}</div>
-                             </TableCell>
-                             <TableCell>{item.barcode || '-'}</TableCell>
-                             <TableCell>{Number.isInteger(quantityNum) ? quantityNum : quantityNum.toFixed(2)}</TableCell>
-                             <TableCell>{item.unitType}</TableCell>
-                             <TableCell>{costNum.toFixed(2)}</TableCell>
-                             <TableCell>{priceNum.toFixed(2)}</TableCell>
-                             <TableCell className={cn(expiryColorClass)}>
-                                {item.expiryDate ? format(new Date(item.expiryDate), 'dd/MM/yyyy', { locale: arSA }) : '-'}
-                                {isExpired && <span className="text-xs block">(منتهي)</span>}
-                                {isExpiringSoon && !isExpired && <span className="text-xs block">(خلال {daysLeft} يوم)</span>}
-                             </TableCell>
-                             <TableCell>{item.inventoryValue.toFixed(2)}</TableCell>
-                         </TableRow>
-                     );
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium">
+                          <div>{item.nameAr}</div>
+                          <div className="text-xs text-muted-foreground">{item.nameEn}</div>
+                        </TableCell>
+                        <TableCell>{item.barcode || '-'}</TableCell>
+                        <TableCell>{Number.isInteger(quantityNum) ? quantityNum : quantityNum.toFixed(2)}</TableCell>
+                        <TableCell>{item.unitType}</TableCell>
+                        <TableCell>{costNum.toFixed(2)}</TableCell>
+                        <TableCell>{priceNum.toFixed(2)}</TableCell>
+                        <TableCell className={cn(expiryColorClass)}>
+                          {item.expiryDate ? format(new Date(item.expiryDate), 'dd/MM/yyyy', { locale: arSA }) : '-'}
+                          {isExpired && <span className="text-xs block">(منتهي)</span>}
+                          {isExpiringSoon && !isExpired && <span className="text-xs block">(خلال {daysLeft} يوم)</span>}
+                        </TableCell>
+                        <TableCell>{item.inventoryValue.toFixed(2)}</TableCell>
+                      </TableRow>
+                    );
                   })
                 ) : (
                   <TableRow>
@@ -278,7 +278,7 @@ export default function InventoryReportPage() {
               </TableBody>
             </Table>
           </div>
-           {/* Add Pagination later if needed */}
+          {/* Add Pagination later if needed */}
         </CardContent>
       </Card>
     </div>

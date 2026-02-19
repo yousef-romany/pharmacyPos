@@ -14,7 +14,7 @@ import { LogIn, Loader2 } from 'lucide-react';
 import { getUserForLogin } from '@/lib/data'; // Import login function
 
 export default function LoginPage() {
-  const [email, setEmail] = React.useState('');
+  const [username, setUsername] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [isLoading, setIsLoading] = React.useState(false);
   const router = useRouter();
@@ -28,20 +28,20 @@ export default function LoginPage() {
     try {
       // --- IMPORTANT ---
       // This is a simplified login. In a real app:
-      // 1. Send email and password to a server endpoint.
+      // 1. Send username and password to a server endpoint.
       // 2. The server verifies the password hash against the stored hash.
       // 3. The server returns a session token (e.g., JWT) or user data on success.
-      // Here, we simulate by fetching the user and assuming the password matches.
+      // Here, we simulate by fetching the user and checking password match.
       // DO NOT use this in production without proper password hashing and server-side validation.
-      const user = await getUserForLogin(email); // Fetch user by email
+      const user = await getUserForLogin(username); // Fetch user by username
 
-      if (user /* && await verifyPassword(password, user.passwordHash) */) {
-        // Simulate successful login (replace with real session logic)
+      if (user && user.passwordHash === password) {
+        // Check if password matches (should be hashed in production)
         login(user); // Update the auth store
         toast({ title: 'تسجيل الدخول ناجح', description: `مرحباً ${user.name}!` });
         router.replace('/dashboard'); // Redirect to dashboard
       } else {
-        toast({ title: 'فشل تسجيل الدخول', description: 'البريد الإلكتروني أو كلمة المرور غير صحيحة.', variant: 'destructive' });
+        toast({ title: 'فشل تسجيل الدخول', description: 'اسم المستخدم أو كلمة المرور غير صحيحة.', variant: 'destructive' });
       }
     } catch (error) {
       console.error('Login failed:', error);
@@ -56,19 +56,19 @@ export default function LoginPage() {
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-2xl font-bold">تسجيل الدخول</CardTitle>
-          <CardDescription>أدخل بريدك الإلكتروني وكلمة المرور للوصول للنظام</CardDescription>
+          <CardDescription>أدخل اسم المستخدم وكلمة المرور للوصول للنظام</CardDescription>
         </CardHeader>
         <form onSubmit={handleLogin}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">البريد الإلكتروني</Label>
+              <Label htmlFor="username">اسم المستخدم</Label>
               <Input
-                id="text"
+                id="username"
                 type="text"
-                placeholder="user"
+                placeholder="admin"
                 required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 disabled={isLoading}
               />
             </div>
