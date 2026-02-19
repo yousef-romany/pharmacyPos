@@ -1,4 +1,0 @@
-[toolchain]
-channel = "1.75.0"
-targets = ["i686-pc-windows-msvc"]
-  
