@@ -25,8 +25,13 @@ jobs:
       - name: Install dependencies
         run: bun install
 
+      - name: Generate Cargo.lock
+        run: |
+          cd src-tauri
+          cargo generate-lockfile
+
       - name: Build for Windows 32-bit
-        run: bun tauri build --target i686-pc-windows-msvc -- --locked
+        run: bun tauri build --target i686-pc-windows-msvc
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
