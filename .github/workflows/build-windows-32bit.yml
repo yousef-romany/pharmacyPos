@@ -1,4 +1,4 @@
-name: Windows 7 32-bit Build
+name: Windows 32-bit Build
 
 on:
   workflow_dispatch:
@@ -33,6 +33,6 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: PharmacyPos-Win7-32bit
+          name: PharmacyPos-Windows-32bit
           path: src-tauri/target/i686-pc-windows-msvc/release/bundle/nsis/*.exe
           if-no-files-found: warn
