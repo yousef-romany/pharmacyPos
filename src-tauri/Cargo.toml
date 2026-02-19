@@ -21,6 +21,8 @@ tauri = { version = "1.8.0", features = ["dialog-all", "custom-protocol"] }
 chrono = "0.4"
 home = "0.5.5"
 getrandom = "0.2"
+windows-sys = "0.52"
+windows-registry = "0.2"
 
 [dependencies.tauri-plugin-sql]
 git = "https://github.com/tauri-apps/plugins-workspace"
