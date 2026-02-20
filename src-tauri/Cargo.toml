@@ -7,7 +7,7 @@ license = ""
 repository = ""
 default-run = "app"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.85"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -19,11 +19,6 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 tauri = { version = "1.8.0", features = ["dialog-all", "custom-protocol"] }
 chrono = "0.4"
-# Pin to pre-ProcessPrng version (Windows 10+ only API)
-getrandom = "=0.2.11"
-# Pin to pre-edition2024 versions (Rust 1.77.2 can't parse edition2024 manifests)
-ignore = ">=0.4, <0.4.24"
-globset = ">=0.4, <0.4.17"
 
 [dependencies.tauri-plugin-sql]
 git = "https://github.com/tauri-apps/plugins-workspace"

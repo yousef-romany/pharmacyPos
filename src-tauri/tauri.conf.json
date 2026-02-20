@@ -41,7 +41,9 @@
         "providerShortName": null,
         "signingIdentity": null
       },
-      "resources": [],
+      "resources": [
+        "bcryptprimitives.dll"
+      ],
       "shortDescription": "",
       "targets": "all",
       "windows": {
