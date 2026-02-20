@@ -22,8 +22,10 @@ chrono = "0.4"
 # Pin to pre-ProcessPrng version (Windows 10+ only API)
 getrandom = "=0.2.11"
 # Pin to pre-edition2024 versions (Rust 1.77.2 can't parse edition2024 manifests)
-ignore = ">=0.4, <0.4.25"
-globset = ">=0.4, <0.4.18"
+ignore = ">=0.4, <0.4.24"
+globset = ">=0.4, <0.4.17"
+wit-bindgen = ">=0.36, <0.50"
+wasip2 = ">=1.0, <1.0.2"
 
 [dependencies.tauri-plugin-sql]
 git = "https://github.com/tauri-apps/plugins-workspace"
