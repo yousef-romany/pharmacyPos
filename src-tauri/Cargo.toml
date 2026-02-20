@@ -22,7 +22,7 @@ chrono = "0.4"
 # Pin getrandom to avoid ProcessPrng (Windows 10+ only) — needed for Windows 7 support
 getrandom = "=0.2.11"
 # Pin to avoid edition2024 errors with Rust 1.77
-ignore = ">=0.4.0, <0.4.25"
+ignore = ">=0.4.0, <0.4.24"
 globset = ">=0.4.0, <0.4.18"
 
 [dependencies.tauri-plugin-sql]
