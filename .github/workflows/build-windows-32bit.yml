@@ -11,6 +11,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
@@ -22,18 +27,22 @@ jobs:
           toolchain: 1.77.2
           targets: i686-pc-windows-msvc
 
+      - name: Install vcpkg and MySQL client
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+          C:\vcpkg\bootstrap-vcpkg.bat
+          C:\vcpkg\vcpkg install libmysql:x86-windows
+        shell: cmd
+
       - name: Install dependencies
         run: bun install
-
-      - name: Generate Cargo.lock
-        run: |
-          cd src-tauri
-          cargo generate-lockfile
 
       - name: Build for Windows 32-bit
         run: bun tauri build --target i686-pc-windows-msvc
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VCPKG_ROOT: C:\vcpkg
+          VCPKG_DEFAULT_TRIPLET: x86-windows
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
