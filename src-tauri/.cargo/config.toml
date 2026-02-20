@@ -6,3 +6,8 @@ check-revoke = false
 
 [registry]
 default = "sparse+https://index.crates.io/"
+
+# Prefer crate versions compatible with package.rust-version (1.77)
+# This avoids resolving to crates that require edition2024 (Rust 1.85+)
+[resolver]
+incompatible-rust-versions = "fallback"
