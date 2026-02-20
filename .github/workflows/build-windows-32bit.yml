@@ -24,15 +24,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.77.2
           targets: i686-pc-windows-msvc
-
-      - name: Build ProcessPrng shim DLL (Windows 7 compatibility)
-        shell: cmd
-        run: |
-          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x86
-          cd src-tauri\shim
-          cl /LD /Fe:..\bcryptprimitives.dll processprng_shim.c bcrypt.lib /link /DEF:bcryptprimitives.def /MACHINE:X86
 
       - name: Install dependencies
         run: bun install
@@ -48,3 +41,4 @@ jobs:
           name: PharmacyPos-Windows-32bit
           path: src-tauri/target/i686-pc-windows-msvc/release/bundle/nsis/*.exe
           if-no-files-found: warn
+
