@@ -8,6 +8,7 @@ const SYNC_API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/a
 const SHOP_ID = process.env.NEXT_PUBLIC_SHOP_ID || 'shop_001';
 const SHOP_NAME = process.env.NEXT_PUBLIC_SHOP_NAME || 'Main Pharmacy';
 const SHOP_LOCATION = process.env.NEXT_PUBLIC_SHOP_LOCATION || 'Cairo, Egypt';
+const WAREHOUSE_ID = process.env.NEXT_PUBLIC_WAREHOUSE_ID || '1';
 const SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 interface SyncSaleData {
@@ -108,13 +109,7 @@ class SyncService {
       // Actually, let's get inventory first, which gives us products.
       
       // 2. Fetch Inventory (All Products)
-      // Assuming warehouseId is available or we fetch all. 
-      // productRepository.findByWarehouse requires an ID.
-      // We'll try to fetch all if possible or use a default warehouse ID.
-      // For now, let's assume a default warehouse ID '1' or fetch generic.
-      // The productRepository has findByWarehouse.
-      // Let's assume there's a config for WAREHOUSE_ID.
-      const WAREHOUSE_ID = '1'; // Placeholder
+      // Uses WAREHOUSE_ID from environment variable (NEXT_PUBLIC_WAREHOUSE_ID)
       const products = await productRepository.findByWarehouse(WAREHOUSE_ID);
       const productMap = new Map<string, Product>();
       products.forEach(p => productMap.set(p.id, p));
