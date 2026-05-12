@@ -538,7 +538,7 @@ const SidebarMenuButton = React.forwardRef<
       ...props
    }, ref) => {
   const { isMobile, state, side, toggleSidebar } = useSidebar();
-  const Comp = asChild ? Slot : (props as any).href ? 'a' : 'button';
+  const Comp: React.ElementType = asChild ? Slot : (props as any).href ? 'a' : 'button';
   const showTooltip = tooltip && state === 'collapsed' && !isMobile;
 
   // Original onClick handler from props
@@ -561,7 +561,7 @@ const SidebarMenuButton = React.forwardRef<
       data-size={size}
       data-active={isActive}
       className={cn(sidebarMenuButtonVariants({ variant, size, className }))}
-      onClick={handleClick}
+      onClick={handleClick as any}
       {...props} // Spread original props (including href etc.)
     >
       {children}
