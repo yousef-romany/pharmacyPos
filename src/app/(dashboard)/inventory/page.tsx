@@ -300,9 +300,10 @@ export default function InventoryPage() {
     }
   };
 
-  const handleUpdateWarehouse = async (data: Warehouse) => {
+  const handleUpdateWarehouse = async (data: Warehouse | Omit<Warehouse, 'id'>) => {
+    const warehouse = data as Warehouse;
     try {
-      await updateWarehouse(data.id, data);
+      await updateWarehouse(warehouse.id, warehouse);
       toast({ title: "نجاح", description: "تم تحديث المخزن بنجاح." });
       fetchWarehousesData(); // Refresh warehouse list
       setEditingWarehouse(null);

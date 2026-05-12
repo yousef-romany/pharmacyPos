@@ -315,7 +315,7 @@ export default function TreasuryPage() {
     try {
       const treasuryId = selectedTreasuryFilter === 'all' ? undefined : selectedTreasuryFilter;
       const [balance, fetchedTransactions] = await Promise.all([
-        getTreasuryBalance(treasuryId), // Pass filter
+        getTreasuryBalance(), // Balance across all accounts
         getTreasuryTransactions({ treasuryId }) // Pass filter
       ]);
       setCurrentBalance(balance);
@@ -344,7 +344,7 @@ export default function TreasuryPage() {
       await addTreasuryTransaction({
         type: type,
         // amount will be handled (negated if needed) by addTreasuryTransaction function
-        amount: data.amount,
+        amount: String(data.amount), // TreasuryTransaction.amount is VARCHAR
         description: data.description,
         userId: user?.id, // Optionally record the user ID
         date: new Date(), // Use current date/time for manual transactions
@@ -388,9 +388,10 @@ export default function TreasuryPage() {
     }
   };
 
-  const handleUpdateTreasury = async (data: Treasury) => {
+  const handleUpdateTreasury = async (data: Treasury | Omit<Treasury, 'id'>) => {
+    const treasury = data as Treasury;
     try {
-      await updateTreasury(data.id, data);
+      await updateTreasury(treasury.id, treasury);
       toast({ title: "نجاح", description: "تم تحديث الخزنة بنجاح." });
       fetchTreasuries(); // Refresh treasury list
       setEditingTreasury(null);

@@ -86,13 +86,13 @@ export const useCart = create<CartState>()(
              // Add new item or item with a different unit type
             const newQuantity = Math.min(quantity, availableStockInSelectedUnit); // Don't exceed available stock
              if (newQuantity > 0) { // Only add if stock allows
-                // Ensure all numeric fields from product are parsed correctly before adding
+                // Normalize string-typed numeric fields from Product, then add cart-specific fields
                 itemsCopy.push({
                   ...product,
-                  price: safeParseFloat(product.price),
-                  lastPurchaseCost: safeParseFloat(product.lastPurchaseCost, undefined), // Allow undefined if null/empty
-                  quantity: safeParseFloat(product.quantity),
-                  discountRate: safeParseFloat(product.discountRate, undefined), // Allow undefined if null/empty
+                  price: String(safeParseFloat(product.price)),
+                  lastPurchaseCost: product.lastPurchaseCost ?? undefined,
+                  quantity: String(safeParseFloat(product.quantity)),
+                  discountRate: product.discountRate ?? undefined,
                   // Cart specific fields
                   cartQuantity: newQuantity,
                   selectedUnitType: selectedUnitType,

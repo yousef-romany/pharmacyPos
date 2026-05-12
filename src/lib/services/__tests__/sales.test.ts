@@ -22,7 +22,7 @@ vi.mock('../../db', () => ({
 
 describe('SalesService Integration Tests', () => {
   let salesService: SalesService;
-  const mockDb = db as { execute: ReturnType<typeof vi.fn> };
+  const mockDb = db as unknown as { execute: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     salesService = new SalesService();

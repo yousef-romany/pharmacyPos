@@ -64,7 +64,7 @@ function CustomerForm({ initialData, onSubmit, onClose }: CustomerFormProps) {
     phone: initialData?.phone || '',
     email: initialData?.email || '',
     address: initialData?.address || '',
-    balance: initialData?.balance || 0, // Add balance field
+    balance: initialData?.balance || '0', // string type per Customer interface
     insuranceCompany: initialData?.insuranceCompany || '',
     policyNumber: initialData?.policyNumber || '',
     insuranceDiscountRate: initialData?.insuranceDiscountRate || undefined,
@@ -77,8 +77,8 @@ function CustomerForm({ initialData, onSubmit, onClose }: CustomerFormProps) {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: name === 'balance' ? parseFloat(value) || 0 // Parse balance as float
-        : name === 'insuranceDiscountRate' ? parseFloat(value) || undefined // Parse insurance rate
+      [name]: name === 'balance' ? String(parseFloat(value) || 0) // Store balance as string (VARCHAR in DB)
+        : name === 'insuranceDiscountRate' ? (value ? String(parseFloat(value)) : undefined) // Store rate as string
           : value,
     }));
   };
@@ -88,7 +88,7 @@ function CustomerForm({ initialData, onSubmit, onClose }: CustomerFormProps) {
     setIsLoading(true);
     try {
       // Validate insurance rate
-      if (formData.insuranceDiscountRate !== undefined && (formData.insuranceDiscountRate < 0 || formData.insuranceDiscountRate > 100)) {
+      if (formData.insuranceDiscountRate !== undefined && (parseFloat(formData.insuranceDiscountRate) < 0 || parseFloat(formData.insuranceDiscountRate) > 100)) {
         toast({ title: "خطأ", description: "نسبة خصم التأمين يجب أن تكون بين 0 و 100.", variant: "destructive" });
         setIsLoading(false);
         return;
@@ -220,10 +220,11 @@ export default function CustomersPage() {
     }
   };
 
-  const handleUpdateCustomer = async (customerData: Customer) => {
-    if (!customerData.id) return;
+  const handleUpdateCustomer = async (customerData: Customer | Omit<Customer, 'id'>) => {
+    const data = customerData as Customer;
+    if (!data.id) return;
     try {
-      await updateCustomer(customerData.id, customerData);
+      await updateCustomer(data.id, data);
       toast({ title: "نجاح", description: "تم تحديث العميل بنجاح." });
       setEditingCustomer(null);
       fetchCustomers(); // Refresh list
@@ -281,8 +282,9 @@ export default function CustomersPage() {
       header: "الرصيد (ج.م)",
       cell: ({ row }) => {
         const balance = row.original.balance ?? 0;
-        const colorClass = balance < 0 ? "text-red-600" : balance > 0 ? "text-green-600" : "text-muted-foreground";
-        return <span className={cn("font-semibold", colorClass)}>{balance.toFixed(2)}</span>;
+        const balanceNum = parseFloat(String(balance)) || 0;
+        const colorClass = balanceNum < 0 ? "text-red-600" : balanceNum > 0 ? "text-green-600" : "text-muted-foreground";
+        return <span className={cn("font-semibold", colorClass)}>{balanceNum.toFixed(2)}</span>;
       },
       size: 100,
     },

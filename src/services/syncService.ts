@@ -195,3 +195,48 @@ class SyncService {
 }
 
 export const syncService = new SyncService();
+
+// ── Convenience exports for components / hooks ─────────────────────────
+
+/** Returns the last successful sync time from localStorage, or null. */
+export function getLastSyncTime(): Date | null {
+  if (typeof window === 'undefined') return null;
+  const lastSyncKey = 'pharma_pos_last_sync';
+  const val = localStorage.getItem(lastSyncKey);
+  if (!val) return null;
+  try {
+    const d = new Date(val);
+    return isNaN(d.getTime()) ? null : d;
+  } catch {
+    return null;
+  }
+}
+
+/** Triggers an immediate sync and returns a result object. */
+export async function triggerManualSync(): Promise<{ success: boolean; message: string }> {
+  try {
+    await syncService.syncToBackend();
+    return { success: true, message: 'Sync completed successfully' };
+  } catch (error) {
+    return {
+      success: false,
+      message: error instanceof Error ? error.message : 'Sync failed',
+    };
+  }
+}
+
+/**
+ * Starts an auto-sync interval and returns the interval ID.
+ * @param intervalMinutes - How often to sync (default 30 min)
+ */
+export function startAutoSync(intervalMinutes: number = 30): NodeJS.Timeout {
+  syncService.syncToBackend(); // run immediately
+  return setInterval(() => {
+    syncService.syncToBackend();
+  }, intervalMinutes * 60 * 1000);
+}
+
+/** Stops an auto-sync interval created by startAutoSync. */
+export function stopAutoSync(intervalId: NodeJS.Timeout): void {
+  clearInterval(intervalId);
+}

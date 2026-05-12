@@ -79,6 +79,7 @@ interface UserFormProps {
 
 function UserForm({ initialData, onSubmit, onClose }: UserFormProps) {
   const [formData, setFormData] = React.useState<Omit<User, 'id'>>({
+    username: initialData?.username || '',
     name: initialData?.name || '',
     email: initialData?.email || '',
     role: initialData?.role || 'seller', // Default role
@@ -221,16 +222,17 @@ export default function UsersPage() {
     }
   };
 
-  // Updated to accept password
-  const handleUpdateUser = async (userData: User & { password?: string }) => {
-    if (!userData.id) return;
+  // Updated to accept password - widened to match UserForm's onSubmit signature
+  const handleUpdateUser = async (userData: (User | Omit<User, 'id'>) & { password?: string }) => {
+    const user = userData as User & { password?: string };
+    if (!user.id) return;
      try {
         // Remove password from userData if it's empty or undefined before sending
-        const updatePayload = { ...userData };
+        const updatePayload = { ...user };
         if (!updatePayload.password) {
             delete updatePayload.password;
         }
-        await updateUser(userData.id, updatePayload);
+        await updateUser(user.id, updatePayload);
         toast({ title: "نجاح", description: "تم تحديث المستخدم بنجاح." });
         setEditingUser(null);
         setIsFormOpen(false); // Close form on success

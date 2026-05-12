@@ -9,11 +9,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { RefreshCw, Cloud, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 import { getLastSyncTime, triggerManualSync } from '@/services/syncService';
-import { toast } from 'sonner';
+import { useToast } from '@/hooks/use-toast';
 
 export function SyncStatus() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const { toast } = useToast();
 
   useEffect(() => {
     // Load last sync time on mount
@@ -32,18 +33,23 @@ export function SyncStatus() {
     try {
       const result = await triggerManualSync();
       if (result.success) {
-        toast.success('Sync successful', {
+        toast({
+          title: 'Sync successful',
           description: 'Data has been synced to the central server',
         });
         setLastSync(new Date());
       } else {
-        toast.error('Sync failed', {
+        toast({
+          title: 'Sync failed',
           description: result.message,
+          variant: 'destructive',
         });
       }
     } catch (error) {
-      toast.error('Sync failed', {
+      toast({
+        title: 'Sync failed',
         description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
       });
     } finally {
       setIsSyncing(false);

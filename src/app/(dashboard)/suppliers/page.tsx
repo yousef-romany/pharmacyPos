@@ -158,10 +158,11 @@ export default function SuppliersPage() {
     }
   };
 
-  const handleUpdateSupplier = async (supplierData: Supplier) => {
-    if (!supplierData.id) return;
+  const handleUpdateSupplier = async (supplierData: Supplier | Omit<Supplier, 'id'>) => {
+    const supplier = supplierData as Supplier;
+    if (!supplier.id) return;
      try {
-        await updateSupplier(supplierData.id, supplierData);
+        await updateSupplier(supplier.id, supplier);
         toast({ title: "نجاح", description: "تم تحديث المورد بنجاح." });
         setEditingSupplier(null);
         fetchSuppliers(); // Refresh list

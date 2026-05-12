@@ -373,10 +373,11 @@ export default function ProductsPage() {
     }
   };
 
-  const handleUpdateProduct = async (productData: Product) => {
-    if (!productData.id) return; // Should have id if editing
+  const handleUpdateProduct = async (productData: Product | Omit<Product, 'id'>) => {
+    const product = productData as Product;
+    if (!product.id) return; // Should have id if editing
     try {
-      await updateProduct(productData.id, productData);
+      await updateProduct(product.id, product);
       toast({ title: "نجاح", description: "تم تحديث المنتج بنجاح." });
       setEditingProduct(null); // Clear editing state
       fetchProductsAndWarehouses(); // Refresh list
@@ -485,7 +486,7 @@ export default function ProductsPage() {
             <span className={cn(isLowStock && "text-amber-600 font-bold")}>
               {Number.isInteger(qty) ? qty : qty.toFixed(2)} {/* Handle potential fractional quantity */}
             </span>
-            {isLowStock && <AlertCircle className="w-4 h-4 text-amber-600" title={`الكمية أقل من الحد الأدنى (${minStock})`} />}
+            {isLowStock && <AlertCircle className="w-4 h-4 text-amber-600" aria-label={`الكمية أقل من الحد الأدنى (${minStock})`} />}
           </div>
         );
       },

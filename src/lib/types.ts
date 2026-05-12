@@ -188,6 +188,7 @@ export interface SaleTransaction {
 
 export interface PurchaseTransactionItem {
     productId: string;
+    productName?: string; // Display only — not persisted to DB
     quantity: string; // Represented as VARCHAR in DB
     cost: string; // Represented as VARCHAR in DB
     expiryDate?: Date; // DATE
